@@ -13,6 +13,7 @@ import { createRoot } from 'react-dom/client'
 import type { HotplugApi } from './api.ts'
 import type { PanelController } from './controller.ts'
 import { HotplugPanel } from './panels.tsx'
+import type { I18n } from './i18n.ts'
 
 const CONVERSATION_COLUMN_SELECTOR = '[data-pane="conversation"]'
 const ACTIVE_ATTR = 'data-dsh-hotplug-active'
@@ -93,7 +94,7 @@ function conversationColumn(): HTMLElement | undefined {
 
 /** Mount the React panel into the conversation column and bind visibility to
  * the controller. Returns the disposer. */
-export function mountPanel(controller: PanelController, api: HotplugApi): () => void {
+export function mountPanel(controller: PanelController, api: HotplugApi, i18n: I18n): () => void {
   let root: ReturnType<typeof createRoot> | undefined
   let container: HTMLDivElement | undefined
   const ensure = (): void => {
@@ -110,7 +111,7 @@ export function mountPanel(controller: PanelController, api: HotplugApi): () => 
     container.dataset.dshHotplugView = ''
     column.appendChild(container)
     root = createRoot(container)
-    root.render(<HotplugPanel api={api} onClose={() => controller.close()} />)
+    root.render(<HotplugPanel api={api} onClose={() => controller.close()} i18n={i18n} />)
   }
   const waitObserver = new MutationObserver(() => { ensure() })
   waitObserver.observe(document.body, { childList: true, subtree: true })
@@ -173,13 +174,14 @@ function newSessionButton(root: HTMLElement): HTMLButtonElement | undefined {
 }
 
 /** Build the sidebar entry button (detached; inserted once the shell is up). */
-function createEntry(controller: PanelController): HTMLButtonElement {
+function createEntry(controller: PanelController, i18n: I18n): HTMLButtonElement {
   const entry = document.createElement('button')
   entry.type = 'button'
   entry.dataset.dshHotplugEntry = ''
   entry.className = 'hpe-entry'
-  entry.setAttribute('aria-label', '热插拔引擎管理面板')
-  entry.innerHTML = `<span class="hpe-entryIcon">${ICON}</span><span class="hpe-entryLabel">热插拔引擎</span>`
+  entry.setAttribute('aria-label', i18n.t('panel.title'))
+  entry.innerHTML = '<span class="hpe-entryIcon">' + ICON + '</span><span class="hpe-entryLabel"></span>'
+  entry.querySelector('.hpe-entryLabel')!.textContent = i18n.t('panel.title')
   entry.addEventListener('click', () => { controller.toggle() })
   return entry
 }
@@ -201,8 +203,13 @@ function placeEntry(root: HTMLElement, entry: HTMLButtonElement): boolean {
 
 /** Mount the sidebar entry, waiting for the shell and self-healing on later
  * React re-renders. Returns the disposer. */
-export function mountSidebarEntry(controller: PanelController): () => void {
-  const entry = createEntry(controller)
+export function mountSidebarEntry(controller: PanelController, i18n: I18n): () => void {
+  const entry = createEntry(controller, i18n)
+  const unsubLocale = i18n.subscribe(() => {
+    entry.setAttribute('aria-label', i18n.t('panel.title'))
+    const label = entry.querySelector('.hpe-entryLabel')
+    if (label !== null) label.textContent = i18n.t('panel.title')
+  })
   let root: HTMLElement | undefined
   let placed = false
   let rootObserver: MutationObserver | undefined
@@ -244,6 +251,7 @@ export function mountSidebarEntry(controller: PanelController): () => void {
     waitObserver.disconnect()
     rootObserver?.disconnect()
     unsubscribe()
+    unsubLocale()
     entry.remove()
   }
 }

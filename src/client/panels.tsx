@@ -1,25 +1,28 @@
 /**
- * Hotplug engine management panel (minimal scope, contract §5/§7 + plan T3.4):
- * three list views (entries / packages / insert rows) + operations with
- * rollback + audit. Driven by REST, refreshed by SSE; the snapshot is the
- * final-consistency source. NO marketplace, NO install/spec input (Non-Goal
- * guard — A3.5/A3.8).
+ * Hotplug panel (minimal scope, contract §5/§7 + plan T3.4): three list views
+ * (entries / packages / insert rows) + operations with rollback + audit.
+ * Driven by REST, refreshed by SSE; the snapshot is the final-consistency
+ * source. NO marketplace, NO install/spec input (Non-Goal guard — A3.5/A3.8).
+ *
+ * Display strings are localized (zh/en) via the DSH locale service through
+ * the I18n wrapper passed from the client entry.
  *
  * @module dsh-hotplug-engine/client/panels
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { AuditRecord, EngineSnapshot, OperationInfo, RuntimeEntry } from '../contract/types.ts'
 import type { HotplugApi } from './api.ts'
+import type { I18n } from './i18n.ts'
 
 type View = 'entries' | 'packages' | 'rows' | 'operations' | 'audit'
 
-const VIEWS: { key: View; label: string }[] = [
-  { key: 'entries', label: '条目' },
-  { key: 'packages', label: '包' },
-  { key: 'rows', label: '插入行' },
-  { key: 'operations', label: '操作' },
-  { key: 'audit', label: '审计' },
+const VIEWS: { key: View; labelKey: string }[] = [
+  { key: 'entries', labelKey: 'tab.entries' },
+  { key: 'packages', labelKey: 'tab.packages' },
+  { key: 'rows', labelKey: 'tab.rows' },
+  { key: 'operations', labelKey: 'tab.operations' },
+  { key: 'audit', labelKey: 'tab.audit' },
 ]
 
 const SOURCE_LABEL: Record<RuntimeEntry['source'], string> = {
@@ -40,8 +43,11 @@ function decodeEntities(value: string): string {
 }
 
 /** The management panel. */
-export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): JSX.Element {
-  const { api, onClose } = props
+export function HotplugPanel(props: { api: HotplugApi; onClose: () => void; i18n: I18n }): JSX.Element {
+  const { api, onClose, i18n } = props
+  const t = i18n.t
+  // Re-render on locale switch (the locale snapshot reference changes).
+  useSyncExternalStore(i18n.subscribe, i18n.getSnapshot)
   const [snap, setSnap] = useState<EngineSnapshot | null>(null)
   const [ops, setOps] = useState<OperationInfo[]>([])
   const [audit, setAudit] = useState<AuditRecord[]>([])
@@ -87,22 +93,22 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
   }, [refresh])
 
   const toggleEntry = useCallback((entry: RuntimeEntry): void => {
-    void act(entry.enabled ? '停用' : '启用', () =>
+    void act(entry.enabled ? t('action.disable') : t('action.enable'), () =>
       entry.enabled ? api.disable(entry.entryId) : api.enable(entry.entryId))
-  }, [act, api])
+  }, [act, api, t])
 
   const rollback = useCallback((op: OperationInfo): void => {
     const handle = op.result?.rollbackHandle ?? op.operationId
-    void act(`回滚 ${op.operationId}`, () => api.rollback(handle))
-  }, [act, api])
+    void act(t('action.rollback') + ' ' + op.operationId, () => api.rollback(handle))
+  }, [act, api, t])
 
   return (
     <div className="hpe-panel">
       <header className="hpe-header">
-        <h2 className="hpe-title">热插拔引擎</h2>
-        <span className="hpe-mode">模式:{snap?.mode ?? '…'}</span>
+        <h2 className="hpe-title">{t('panel.title')}</h2>
+        <span className="hpe-mode">{t('panel.mode', { mode: snap?.mode ?? '…' })}</span>
         <span className="hpe-profile">{snap?.profile ?? ''}</span>
-        <button type="button" className="hpe-close" aria-label="关闭面板" onClick={onClose}>×</button>
+        <button type="button" className="hpe-close" aria-label={t('panel.close')} onClick={onClose}>×</button>
       </header>
 
       <nav className="hpe-tabs">
@@ -114,23 +120,23 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
             data-active={view === v.key ? 'true' : undefined}
             onClick={() => setView(v.key)}
           >
-            {v.label}
+            {t(v.labelKey)}
           </button>
         ))}
       </nav>
 
       {snap?.auditLag === true && (
-        <div className="hpe-warn">审计滞后:某次审计写入失败,审计轨迹可能不完整。</div>
+        <div className="hpe-warn">{t('panel.auditLag')}</div>
       )}
 
-      {busy !== null && <div className="hpe-busy">操作中:{busy}…</div>}
+      {busy !== null && <div className="hpe-busy">{t('panel.busy', { label: busy })}</div>}
       {error !== null && <div className="hpe-error">{decodeEntities(error)}</div>}
 
       <div className="hpe-body">
         {view === 'entries' && (
           <table className="hpe-table">
             <thead>
-              <tr><th>entryId</th><th>包名</th><th>来源</th><th>阶段</th><th>托管</th><th>状态</th><th>操作</th></tr>
+              <tr><th>{t('th.entryId')}</th><th>{t('th.package')}</th><th>{t('th.source')}</th><th>{t('th.phase')}</th><th>{t('th.managed')}</th><th>{t('th.state')}</th><th>{t('th.actions')}</th></tr>
             </thead>
             <tbody>
               {snap?.entries.map(entry => (
@@ -138,9 +144,9 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
                   <td className="hpe-mono">{entry.entryId}</td>
                   <td>{entry.moduleName}</td>
                   <td><span className="hpe-badge" data-source={entry.source}>{SOURCE_LABEL[entry.source]}</span></td>
-                  <td>{entry.fiberPhase ?? '—'}</td>
-                  <td>{entry.managed ? '是' : '—'}</td>
-                  <td>{entry.enabled ? '启用' : '停用'}</td>
+                  <td>{entry.fiberPhase ?? t('dash')}</td>
+                  <td>{entry.managed ? t('yes') : t('dash')}</td>
+                  <td>{entry.enabled ? t('state.enabled') : t('state.disabled')}</td>
                   <td>
                     {entry.patchTargetable
                       ? (
@@ -150,10 +156,10 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
                             disabled={busy !== null}
                             onClick={() => toggleEntry(entry)}
                           >
-                            {entry.enabled ? '停用' : '启用'}
+                            {entry.enabled ? t('action.disable') : t('action.enable')}
                           </button>
                         )
-                      : <span className="hpe-muted">随机id不可定位</span>}
+                      : <span className="hpe-muted">{t('entry.notTargetable')}</span>}
                   </td>
                 </tr>
               ))}
@@ -164,14 +170,14 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
         {view === 'packages' && (
           <table className="hpe-table">
             <thead>
-              <tr><th>包名</th><th>bundle</th><th>版本</th></tr>
+              <tr><th>{t('th.package')}</th><th>{t('th.bundle')}</th><th>{t('th.version')}</th></tr>
             </thead>
             <tbody>
               {snap?.packages.map(pkg => (
                 <tr key={pkg.name}>
                   <td>{pkg.name}</td>
-                  <td>{pkg.isBundle ? '是' : '—'}</td>
-                  <td className="hpe-mono">{pkg.version ?? '—'}</td>
+                  <td>{pkg.isBundle ? t('yes') : t('dash')}</td>
+                  <td className="hpe-mono">{pkg.version ?? t('dash')}</td>
                 </tr>
               ))}
             </tbody>
@@ -181,14 +187,14 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
         {view === 'rows' && (
           <table className="hpe-table">
             <thead>
-              <tr><th>id</th><th>包名</th><th>托管</th></tr>
+              <tr><th>{t('th.id')}</th><th>{t('th.package')}</th><th>{t('th.managed')}</th></tr>
             </thead>
             <tbody>
               {snap?.insertRows.map(row => (
                 <tr key={row.id}>
                   <td className="hpe-mono">{row.id}</td>
                   <td>{row.name}</td>
-                  <td>{row.managed ? '是' : '—'}</td>
+                  <td>{row.managed ? t('yes') : t('dash')}</td>
                 </tr>
               ))}
             </tbody>
@@ -198,17 +204,17 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
         {view === 'operations' && (
           <table className="hpe-table">
             <thead>
-              <tr><th>operationId</th><th>op</th><th>目标</th><th>状态</th><th>开始</th><th>结束</th><th>操作</th></tr>
+              <tr><th>{t('th.operationId')}</th><th>{t('th.op')}</th><th>{t('th.target')}</th><th>{t('th.status')}</th><th>{t('th.start')}</th><th>{t('th.end')}</th><th>{t('th.actions')}</th></tr>
             </thead>
             <tbody>
               {[...ops].reverse().map(op => (
                 <tr key={op.operationId}>
                   <td className="hpe-mono">{op.operationId}</td>
                   <td>{op.op}</td>
-                  <td>{op.target ?? '—'}</td>
+                  <td>{op.target ?? t('dash')}</td>
                   <td><span className="hpe-badge" data-status={op.status}>{op.status}</span></td>
-                  <td className="hpe-mono">{op.startedAt ? op.startedAt.slice(11, 19) : '—'}</td>
-                  <td className="hpe-mono">{op.finishedAt ? op.finishedAt.slice(11, 19) : '—'}</td>
+                  <td className="hpe-mono">{op.startedAt ? op.startedAt.slice(11, 19) : t('dash')}</td>
+                  <td className="hpe-mono">{op.finishedAt ? op.finishedAt.slice(11, 19) : t('dash')}</td>
                   <td>
                     {op.status === 'succeeded' && op.op !== 'rollback' && op.result?.rollbackHandle !== undefined
                       ? (
@@ -219,10 +225,10 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
                             disabled={busy !== null}
                             onClick={() => rollback(op)}
                           >
-                            回滚
+                            {t('action.rollback')}
                           </button>
                         )
-                      : '—'}
+                      : t('dash')}
                   </td>
                 </tr>
               ))}
@@ -233,18 +239,18 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
         {view === 'audit' && (
           <table className="hpe-table">
             <thead>
-              <tr><th>时间</th><th>op</th><th>目标</th><th>结果</th><th>模式</th><th>调用方</th><th>错误码</th></tr>
+              <tr><th>{t('th.time')}</th><th>{t('th.op')}</th><th>{t('th.target')}</th><th>{t('th.result')}</th><th>{t('th.mode')}</th><th>{t('th.caller')}</th><th>{t('th.errorCode')}</th></tr>
             </thead>
             <tbody>
               {audit.map(record => (
-                <tr key={`${record.operationId}-${record.ts}`}>
+                <tr key={record.operationId + '-' + record.ts}>
                   <td className="hpe-mono">{record.ts.slice(0, 19)}</td>
                   <td>{record.op}</td>
-                  <td>{record.target ?? '—'}</td>
+                  <td>{record.target ?? t('dash')}</td>
                   <td><span className="hpe-badge" data-result={record.result}>{record.result}</span></td>
                   <td>{record.mode}</td>
                   <td>{record.caller}</td>
-                  <td className="hpe-mono">{record.errorCode ?? '—'}</td>
+                  <td className="hpe-mono">{record.errorCode ?? t('dash')}</td>
                 </tr>
               ))}
             </tbody>
@@ -253,7 +259,7 @@ export function HotplugPanel(props: { api: HotplugApi; onClose: () => void }): J
       </div>
 
       <footer className="hpe-footer">
-        以快照为最终一致源;新客户端 bundle 需刷新页面才加载;bundle 包安装/卸载需重启后生效。
+        {t('panel.footer')}
       </footer>
     </div>
   )

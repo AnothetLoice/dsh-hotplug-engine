@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { HotplugPanel } from '../src/client/panels.tsx'
 import type { HotplugApi } from '../src/client/api.ts'
+import { makeI18n, type I18n, type LocaleLike } from '../src/client/i18n.ts'
 import type { AuditRecord, EngineEvent, EngineSnapshot, OperationInfo } from '../src/contract/types.ts'
 
 beforeAll(() => {
@@ -83,12 +84,22 @@ class FakeApi {
 let root: Root | undefined
 let container: HTMLDivElement | undefined
 
-async function renderPanel(api: HotplugApi): Promise<void> {
+function testI18n(active: 'zh' | 'en' = 'zh'): I18n {
+  const snapshot = { active, revision: 0 }
+  const locale: LocaleLike = {
+    getLocale: () => ({ active: snapshot.active }),
+    getSnapshot: () => snapshot,
+    subscribe: () => () => {},
+  }
+  return makeI18n(locale)
+}
+
+async function renderPanel(api: HotplugApi, i18n: I18n = testI18n()): Promise<void> {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root!.render(<HotplugPanel api={api} onClose={() => {}} />)
+    root!.render(<HotplugPanel api={api} onClose={() => {}} i18n={i18n} />)
   })
   await act(async () => {}) // flush the effect chain (initial refresh)
 }
@@ -108,7 +119,7 @@ describe('client: HotplugPanel minimal management UI', () => {
     const api = new FakeApi() as unknown as HotplugApi
     await renderPanel(api)
     const text = container!.textContent ?? ''
-    expect(text).toContain('热插拔引擎')
+    expect(text).toContain('HPE看板')
     expect(text).toContain('模式:hot')
     // entries view: two rows, only the patch-targetable one gets a button
     const rows = container!.querySelectorAll('tbody tr')
@@ -179,5 +190,18 @@ describe('client: HotplugPanel minimal management UI', () => {
     expect(error).not.toBeNull()
     expect(error!.textContent).toContain('<script>x</script>')
     expect(error!.textContent).not.toContain('&lt;')
+  })
+
+  it('renders English labels when the locale service reports en', async () => {
+    const api = new FakeApi() as unknown as HotplugApi
+    await renderPanel(api, testI18n('en'))
+    const text = container!.textContent ?? ''
+    expect(text).toContain('HPE Board')
+    expect(text).toContain('Mode: hot')
+    const tabs = [...container!.querySelectorAll('.hpe-tab')].map(t => t.textContent)
+    expect(tabs).toContain('Entries')
+    expect(tabs).toContain('Audit')
+    const button = container!.querySelector('.hpe-btn') as HTMLButtonElement
+    expect(button.textContent).toBe('Disable')
   })
 })
