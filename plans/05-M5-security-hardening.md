@@ -158,10 +158,10 @@
 
 ## 7. 验收条件(M5 完成判定,逐项 MUST 满足)
 
-- [ ] A 类(H2/M1/M2/M3/L1/L2/L5)全部修复 + 单测全绿;typecheck/build 零错误;既有 166 测试不回归;
-- [ ] H1 决策落地(若采纳 token),01-contract §5/§8 与 ADR-0006 同步标注;
-- [ ] 演练 profile 实机验证(越权 handle / 越权 profile / token 用例),验证后清理,结果回填 harness-research/hotplug-dev-audit.md 实测记录;
-- [ ] docs/security-crash-review.md 逐条标注“已修 / 已决策 / 待决策”。
+- [x] A 类(H2/M1/M2/M3/L1/L2/L5)全部修复 + 单测全绿;typecheck/build 零错误;既有 166 测试不回归(基线 166 → 188 全绿,2026-08-14);
+- [x] H1 决策落地(采纳 opt-in token),01-contract §5/§8 与 ADR-0006 同步标注;
+- [x] 演练 profile 实机验证(越权 handle / 越权 profile / token 用例),验证后清理,结果回填 harness-research/hotplug-dev-audit.md §7.3 实测记录(2026-08-14);
+- [x] docs/security-crash-review.md 逐条标注“已修 / 已决策 / 待决策”。
 
 ---
 

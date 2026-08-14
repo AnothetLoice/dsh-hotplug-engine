@@ -105,6 +105,23 @@
 | P1 | M3 readPatch 防御 | 内部 try/catch 返回空串 |
 | P2 | L1/L2/L3/L5 | 异步重试、crypto random、local spec 规范化、REST 响应 try/catch |
 
+### M5 整改状态(2026-08-14,见 plans/05-M5-security-hardening.md)
+
+| 项 | 状态 | 落地 |
+|---|---|---|
+| H2 | **已修** | assertSafeOperationId(/^op-\d+-\d+$/) + loadBackup 路径归属 + rollbackByHandle sidecar 路径复校(三层) |
+| H1 | **已决策(加法式 opt-in token)** | restToken options/环境变量 DSH_HOTPLUG_REST_TOKEN;写端点 Bearer 门禁(timingSafeEqual);未配置=现状;已标注 01-contract §5/§8 与 ADR-0006 |
+| M1 | **已修** | profileDirIn 显式拒绝 '.' / '..'(PROFILE_UNSAFE) |
+| M2 | **已修** | sanitizeTerminal 剥离 C0/C1+ESC 后嵌入 message |
+| M3 | **已修** | readPatch try/catch 返回空串 |
+| L1 | **已修(调优)** | RENAME_RETRY_LIMIT 10→5、DELAY 50→20(保持同步,异步化留 v2) |
+| L2 | **已修** | tmp 名改 randomBytes 密码学随机 |
+| L3 | **待决策** | local spec 路径作用域需用户拍板,本阶段仅登记(可能破坏"任意目录安装"用法) |
+| L4 | **已决策(defer)** | 操作历史持久化仅文档化,不实现 |
+| L5 | **已修** | writeJson 内部 try/catch(一处收口) |
+
+> 实测记录与回归见 harness-research/hotplug-dev-audit.md §7(M5 段)。
+
 ---
 
 ## 7. 评审范围声明
