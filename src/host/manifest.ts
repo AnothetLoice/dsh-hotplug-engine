@@ -58,6 +58,13 @@ export function profileDirIn(dshHomePath: string, name: string): string {
   if (!PROFILE_NAME_RE.test(name) || name.length === 0 || name.length > 120) {
     throw new EngineError(ErrorCodes.PROFILE_UNSAFE, `unsafe profile name: ${JSON.stringify(name)}`)
   }
+  // M5 M1: the whitelist also admits the path aliases '.' and '..', which
+  // join() would normalize into the profiles root or $DSH_HOME itself.
+  // Reject them explicitly (zero-compat-risk layer; the regex tightening is
+  // optional per plan A2).
+  if (name === '.' || name === '..') {
+    throw new EngineError(ErrorCodes.PROFILE_UNSAFE, `unsafe profile name: ${JSON.stringify(name)}`)
+  }
   return join(dshHomePath, 'profiles', name)
 }
 
@@ -98,10 +105,17 @@ export function patchPath(dir: string): string {
   return join(dir, 'cordis.patch.yml')
 }
 
-/** Read patch file content, or the empty string when absent. */
+/** Read patch file content, or the empty string when absent/unreadable.
+ * M5 M3: mirror readManifest's defensive posture — an existing but
+ * unreadable patch (permission/race) must not throw into callers. */
 export function readPatch(dir: string): string {
   const path = patchPath(dir)
-  return existsSync(path) ? readFileSync(path, 'utf8') : ''
+  if (!existsSync(path)) return ''
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
 }
 
 /** Read the current bundle layer stack of a profile. */

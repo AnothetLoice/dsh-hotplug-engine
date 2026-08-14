@@ -143,6 +143,24 @@ describe('service: mode and snapshot', () => {
     expect(r.errors?.[0]?.code).toBe(ErrorCodes.PROFILE_NOT_FOUND)
   })
 
+  // M5 M1: the path aliases '.' and '..' must be rejected at the service
+  // boundary too (not just profileDirIn) — snapshot/install with a traversal
+  // profile must fail with PROFILE_UNSAFE, never resolve to $DSH_HOME.
+  it('rejects traversal profile aliases "." and ".." with PROFILE_UNSAFE', async () => {
+    const { svc } = setup()
+    expect(() => svc.snapshot('..')).toThrowError(
+      expect.objectContaining({ code: ErrorCodes.PROFILE_UNSAFE }),
+    )
+    expect(() => svc.snapshot('.')).toThrowError(
+      expect.objectContaining({ code: ErrorCodes.PROFILE_UNSAFE }),
+    )
+    for (const profile of ['.', '..']) {
+      const r = await svc.install('dsh-ssh', { profile })
+      expect(r.ok, JSON.stringify(profile)).toBe(false)
+      expect(r.errors?.[0]?.code, JSON.stringify(profile)).toBe(ErrorCodes.PROFILE_UNSAFE)
+    }
+  })
+
   it('rejects official profiles other than the host with PROTECTED (ADR-0007)', async () => {
     const { svc } = setup()
     const r = await svc.disable('row-a', { profile: 'headless' })

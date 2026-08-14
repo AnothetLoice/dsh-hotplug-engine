@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   IN_BOX_BUNDLES, detectHostProfile, dshHome, isOfficialProfile, profileDir,
-  readBundles, readManifest, restoreInBoxBundles, withBundleAdded, withBundleRemoved,
-  writeManifestAtomic,
+  profileDirIn, readBundles, readManifest, readPatch, restoreInBoxBundles,
+  withBundleAdded, withBundleRemoved, writeManifestAtomic,
 } from '../src/host/manifest.ts'
 import { EngineError, ErrorCodes } from '../src/contract/types.ts'
 
@@ -15,6 +15,20 @@ describe('manifest: profile directory resolution', () => {
     for (const bad of ['../x', 'a/b', '', 'x'.repeat(121), 'a b', 'a!b']) {
       expect(() => profileDir(bad), JSON.stringify(bad)).toThrow(EngineError)
     }
+  })
+
+  // M5 M1: the whitelist regex admits '.' and '..' — they must be rejected
+  // explicitly (path aliases join() would normalize).
+  it('rejects the path aliases "." and ".." with PROFILE_UNSAFE', () => {
+    const home = join(tmpdir(), 'hpe-m1-home')
+    for (const bad of ['.', '..']) {
+      expect(() => profileDirIn(home, bad), JSON.stringify(bad)).toThrowError(
+        expect.objectContaining({ code: ErrorCodes.PROFILE_UNSAFE }),
+      )
+    }
+    // normal names still resolve (no over-broadening)
+    expect(profileDirIn(home, 'web')).toBe(join(home, 'profiles', 'web'))
+    expect(profileDirIn(home, 'my.profile-2')).toBe(join(home, 'profiles', 'my.profile-2'))
   })
 
   it('detects official profiles', () => {
@@ -86,5 +100,20 @@ describe('manifest: bundles bookkeeping (official-reconcile semantics)', () => {
     const m = readManifest(dir)
     writeManifestAtomic(dir, { ...m, name: 'renamed' })
     expect(readManifest(dir).name).toBe('renamed')
+  })
+
+  // M5 M3: readPatch must be defensive like readManifest — an existing but
+  // unreadable patch (permission / race) returns '' instead of throwing.
+  it('readPatch returns the empty string for an unreadable patch file', () => {
+    const dir = makeProfile()
+    writeFileSync(join(dir, 'cordis.patch.yml'), '- id: row-a\n', 'utf8')
+    expect(readPatch(dir)).toBe('- id: row-a\n')
+    // Simulate an unreadable file: replace it with a directory, whose read
+    // throws EISDIR on both platforms (portable unreadable-file stand-in).
+    const dirPath = join(dir, 'cordis.patch.yml')
+    rmSync(dirPath, { force: true })
+    mkdirSync(dirPath)
+    expect(readPatch(dir)).toBe('')
+    expect(() => readFileSync(dirPath, 'utf8')).toThrow()
   })
 })
