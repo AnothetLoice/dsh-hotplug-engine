@@ -10,6 +10,18 @@ DSH 热插拔执行引擎(执行层,非市场)。把「安装→注册→应用�
 
 ---
 
+## 安装
+
+通过 npm 安装到目标 profile(这是 `dsh.bundle` 包,安装/卸载后需重启 profile 生效):
+
+```bash
+pnpm --dir <profile-dir> add dsh-hotplug-engine
+```
+
+或经官方插件通道 `dsh plugin add dsh-hotplug-engine`。安装后:新客户端 bundle 需刷新页面才加载。
+
+---
+
 ## 消费方接入指南(三条路径)
 
 ### 1. host 插件注入(进程内,最强)

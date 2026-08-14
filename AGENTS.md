@@ -6,11 +6,11 @@ This file provides guidance to agent tools when working with code in this reposi
 
 本仓库是 **dsh-hotplug-engine**(「DSH 热插拔执行引擎」)的项目目录。定位:一个 host 侧服务插件,把「安装→注册→应用→回滚→审计」热插拔执行链做成**任何市场 / agent / 宿主插件都能调用的可靠服务**;自己不拥有目录、不做发现与策展——与市场是"执行层 vs 发现层"的分工,**不是竞争关系**。
 
-- **当前状态(2026-08-14)**:设计/契约/计划已定;**M1–M4 全量实现完成并锁定,契约 v1 已冻结**(01-contract.md 版本 1.0):M1(最小闭环)/M2(安装闭环)/M3(对外面)/M4(加固冻结:审计滞后指示 auditLag、多 profile 文件/restart 语义、引擎自身行 enable/disable 自毁守卫、发布包实机验证);每里程碑双 subagent review(架构 + 一致性)+ 修复后复核,冻结门终审双 review 通过(major M1 已修 + 回归,minor 全部修正/文档化);host/client typecheck 零错误、**166/166 测试全绿**、build 产物正确、发布 tarball 实机 boot 验证通过;真实 web profile 全程未触碰(模板原样、3080 在线)。**后续方向**:v2 候选(token/审批钩子、观察窗口数据校准、动态服务装配评估等,见 01-contract §10 / ADR-0006 / 00-index §4)。设计基线在上级目录 `harness-research/`:
-  - `hotplug-engine-design.md` — **上位设计**:服务定位/服务契约 API 草案/消费方集成路径/Non-Goals/可靠性承诺/落地建议;
-  - `hotplug-dev-audit.md` — 机制精确化(含 §1.2 hmr disabled 真相)、社区三家审计、安全面、更安全策略、§7 实测记录、§8 开发方向合理性(红线);
-  - `hotplug-analysis.md`、`official-harness-architecture.md`、`SESSION-HANDOVER.md` — 机制与上下文;
-  - `hotplug-drill/` — 实测演练包(全链路已验证,可复用为测试夹具)。
+- **当前状态(2026-08-14)**:设计/契约/计划已定;**M1–M4 全量实现完成并锁定,契约 v1 已冻结**(01-contract.md 版本 1.0):M1(最小闭环)/M2(安装闭环)/M3(对外面)/M4(加固冻结:审计滞后指示 auditLag、多 profile 文件/restart 语义、引擎自身行 enable/disable 自毁守卫、发布包实机验证);每里程碑双 subagent review(架构 + 一致性)+ 修复后复核,冻结门终审双 review 通过(major M1 已修 + 回归,minor 全部修正/文档化);host/client typecheck 零错误、**166/166 测试全绿**、build 产物正确、发布 tarball 实机 boot 验证通过;真实 web profile 全程未触碰(模板原样、3080 在线)。**后续方向**:v2 候选(token/审批钩子、观察窗口数据校准、动态服务装配评估等,见 01-contract §10 / ADR-0006 / 00-index §4)。设计基线来自**私有工作笔记(未随仓库发布)**,核心依据:
+  - 设计基线 — **上位设计**:服务定位/服务契约 API 草案/消费方集成路径/Non-Goals/可靠性承诺/落地建议;
+  - 设计审计笔记 — 机制精确化(含 §1.2 hmr disabled 真相)、社区三家审计、安全面、更安全策略、§7 实测记录、§8 开发方向合理性(红线);
+  - 上下文笔记(私有,未随仓库发布) — 机制与上下文;
+  - 演练夹具(自备) — 实测演练包(全链路已验证,可复用为测试夹具)。
 - **本项目文档**(2026-08-14 已建,首版未冻结):`docs/00-index.md`(索引+决策总览+review 记录)、`docs/01-contract.md`(**契约 v1,权威**)、`docs/02-design.md`(详细设计,M1-M4 实施顺序)、`docs/adr/ADR-0001..0007`(锁定决策)、**`plans/00-plan-index.md` + `plans/01..04-M*.md`(实施计划:M1 最小闭环/M2 安装闭环/M3 对外面/M4 加固冻结,含各阶段任务拆分/验收条件/测试设计)**。
 - **实现环境事实**:DSH `0.1.0-rc.6`(developer preview,机制可能变动);工作目录 `<workspace>`;Web profile = `web`(3080 在线,boot 图 49 条目);官方源码在 npx 缓存 `node_modules\@deepseek-ai\*`;npm registry = https://registry.npmjs.org/;pnpm = `<repo-tools>/pnpm` (私链工具,不随仓库提供)。
 - **验证手段**:实机 `http://127.0.0.1:3080/`(boot 图/ping 路由);`dsh --profile web --dump-config`(组合树,需 $DSH_HOME 写权限,沙箱需升级审批)。
@@ -20,9 +20,9 @@ This file provides guidance to agent tools when working with code in this reposi
 
 | 层 | 位置 | 职责 |
 |---|---|---|
-| 设计基线 | `harness-research/hotplug-engine-design.md` | 服务定位/契约/集成路径/Non-Goals(本项目唯一设计权威) |
-| 机制与安全依据 | `harness-research/hotplug-dev-audit.md` | 官方机制事实、社区审计、安全面、策略、红线(实现必须对照) |
-| 上下文 | `harness-research/hotplug-analysis.md`、`official-harness-architecture.md`、`SESSION-HANDOVER.md` | 机制演进、官方架构、环境事实与坑 |
+| 设计基线 | 设计基线(私有工作笔记,未随仓库发布) | 服务定位/契约/集成路径/Non-Goals(本项目唯一设计权威) |
+| 机制与安全依据 | 设计审计笔记(私有,未随仓库发布) | 官方机制事实、社区审计、安全面、策略、红线(实现必须对照) |
+| 上下文 | 上下文笔记(私有,未随仓库发布) | 机制演进、官方架构、环境事实与坑 |
 | 本项目设计 | `docs/00-index.md` / `01-contract.md` / `02-design.md` / `adr/` | 契约(权威)+ 详细设计 + 决策记录(**已建,2026-08-14**) |
 | 实施计划 | `plans/00-plan-index.md` / `01-M1-*.md` / `02-M2-*.md` / `03-M3-*.md` / `04-M4-*.md` | 阶段拆分/里程碑/验收条件/测试设计(**已建,2026-08-14**) |
 | 实现 | 本目录 `src/`(M1 已实现:contract/patch/manifest/queue/backup/health/audit/service/index/client) | host 服务 / patch 写入 / 质量门(M2) / 回滚 / 审计 / REST(M3) / 工具(M3) / 最小管理 UI(M3) |
@@ -76,7 +76,7 @@ This file provides guidance to agent tools when working with code in this reposi
 ## 命令行操作注意(本会话已验证)
 
 - **沙箱**:写 `$DSH_HOME`(含 `profiles/web`)需 `sandbox_permissions: danger-full-access` 升级(会弹用户审批);读操作无需;
-- **git/curl 的 schannel TLS 在本沙箱失败**(SEC_E_NO_CREDENTIALS)——网络下载用 Node https 脚本(OpenSSL 可用),见 `harness-research/fetch-community-plugins.js`;
+- **git/curl 的 schannel TLS 在本沙箱失败**(SEC_E_NO_CREDENTIALS)——网络下载用 Node https 脚本(OpenSSL 可用),见自备的下载脚本;
 - npm/npx 直跑会 EPERM(写 npm-cache 被拦)——下载一律 Node 脚本写进工作区;
 - PowerShell 命令串避免反引号(会被 JS 模板字面量搞坏),用 `[char]10` 或 Add-Content 数组;
 - pnpm 11 遇到 `ERR_PNPM_IGNORED_BUILDS`:把包名加进 profile `pnpm-workspace.yaml` 的 `allowBuilds`;
@@ -130,6 +130,6 @@ This file provides guidance to agent tools when working with code in this reposi
 ## 文档语言与术语约定
 
 - 规范关键词 **MUST / MUST NOT / SHOULD / SHOULD NOT / MAY**(RFC 语义);
-- 中文为主;术语与 `harness-research/` 系列文档保持一致(profile/bundle/patch/insert/disabled/fiber/HMR/managed block/质量门/观察窗口/spec);
+- 中文为主;术语与本仓库文档系列保持一致(profile/bundle/patch/insert/disabled/fiber/HMR/managed block/质量门/观察窗口/spec);
 - 本仓库维护 `AGENTS.md`;若另建 `CLAUDE.md`,内容 MUST 与 `AGENTS.md` 一致并同步更新;
-- 新增设计文档沿用 `harness-research` 编号风格(如 `hotplug-engine-<主题>.md`),先链接受影响的上位文档再落笔。
+- 新增设计文档沿用本仓库编号风格(如 `hotplug-engine-<主题>.md`),先链接受影响的上位文档再落笔。

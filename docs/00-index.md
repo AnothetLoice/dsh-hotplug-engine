@@ -1,7 +1,7 @@
 # 文档索引 — dsh-hotplug-engine
 
 > 文档编号:`hotplug-engine-INDEX-00` | 性质:索引 + 决策总览 | 版本:0.1(2026-08-14)
-> 上位约束:AGENTS.md(文档层级);设计基线 `harness-research/hotplug-engine-design.md`
+> 上位约束:AGENTS.md(文档层级);设计基线(私有工作笔记,未随仓库发布)
 
 ## 1. 文档清单
 
@@ -48,7 +48,7 @@
 
 - 契约变更:先改 `01-contract.md` → 再改 `src/contract/types.ts` → 走 ADR(破坏性变更升 v2);
 - 设计变更:先改 `02-design.md` → 实现;偏离既有 ADR 时新增 ADR 记录;
-- 官方机制事实变化:先更新 `harness-research/hotplug-dev-audit.md` → 再评估本文档影响。
+- 官方机制事实变化:先更新设计审计笔记(私有,未随仓库发布)→ 再评估本文档影响。
 
 ---
 

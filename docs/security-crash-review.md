@@ -120,7 +120,7 @@
 | L4 | **已决策(defer)** | 操作历史持久化仅文档化,不实现 |
 | L5 | **已修** | writeJson 内部 try/catch(一处收口) |
 
-> 实测记录与回归见 harness-research/hotplug-dev-audit.md §7(M5 段)。
+> 实测记录与回归见设计审计笔记(私有,未随仓库发布) §7(M5 段)。
 
 ---
 

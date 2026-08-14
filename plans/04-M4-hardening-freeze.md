@@ -66,7 +66,7 @@
 - [x] A4.7 **双 subagent review 通过**(架构 + 一致性;含契约一致性人工对照);✅ 2026-08-14 冻结门终审:一致性「基本一致需修正」→ I1/I2(落款陈旧)/O1(复选框)/O2(audit.ts 死代码)全部修正;**契约 §3 类型逐字段零不一致**;架构「有条件通过」→ major M1(引擎自身行 enable/disable 自毁)已修 + 回归测试,minor M2/M6(自保护边界)已文档化 ADR-0007/设计 §3.6、M3(非宿主 snapshot.mode=restart)已修 + 测试、M4(readInsertRows 多行块)已修 + 测试、M5 流程项随 A4.8 执行;遗留待办(00-index §4)全部关闭/明确降级;
 - [x] A4.8 01-contract.md 标注「已冻结 v1」;✅ 2026-08-14:标题 + 头部冻结注记 + 落款同步(版本 1.0);
 - [x] A4.9 发布包可装可用;✅ T4.7:README 消费方指南(三路径示例/安全边界/profile 语义)就绪;`pnpm pack` tarball 38 项完整(lib/ + cordis.patch.yml + README + LICENSE);**tarball → 临时 profile `pnpm add` → bundles → 独立宿主 boot 验证通过**(snapshot 140 条目 + auditLag 字段透出 + client.js 200);演练 profile/tgz 已清理;
-- [x] A4.10 实测记录全部回填;✅ `harness-research/hotplug-dev-audit.md` §7.1(M3 对外面实机)/§7.2(M4 发布包验证)已回填;`SESSION-HANDOVER.md` §2.5(引擎项目冻结状态)/§4/§5(机制事实)已更新;真实 web profile 全程未触碰(模板原样、3080 在线)。
+- [x] A4.10 实测记录全部回填;✅ 设计审计笔记(私有,未随仓库发布) §7.1(M3 对外面实机)/§7.2(M4 发布包验证)已回填;上下文笔记(私有,未随仓库发布) §2.5(引擎项目冻结状态)/§4/§5(机制事实)已更新;真实 web profile 全程未触碰(模板原样、3080 在线)。
 
 ## 7. 风险与回退
 

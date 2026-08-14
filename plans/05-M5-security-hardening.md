@@ -118,7 +118,7 @@
 | T5.7 | L1 busy-wait 调优 | patch.ts | — |
 | T5.8 | H1 可选 token 门禁 | rest.ts、index.ts、contract/types.ts、01-contract §5/§8(标注) | T5.5 |
 | T5.9 | L3 local spec 作用域(待决策) | installer.ts | 决策后 |
-| T5.10 | 回归 + 实机验证 + 文档回填 | tests/、security-crash-review.md(标注)、harness-research/hotplug-dev-audit.md(实测记录) | 全部 |
+| T5.10 | 回归 + 实机验证 + 文档回填 | tests/、security-crash-review.md(标注)、设计审计笔记(私有,未随仓库发布)(实测记录) | 全部 |
 
 ---
 
@@ -160,7 +160,7 @@
 
 - [x] A 类(H2/M1/M2/M3/L1/L2/L5)全部修复 + 单测全绿;typecheck/build 零错误;既有 166 测试不回归(基线 166 → 188 全绿,2026-08-14);
 - [x] H1 决策落地(采纳 opt-in token),01-contract §5/§8 与 ADR-0006 同步标注;
-- [x] 演练 profile 实机验证(越权 handle / 越权 profile / token 用例),验证后清理,结果回填 harness-research/hotplug-dev-audit.md §7.3 实测记录(2026-08-14);
+- [x] 演练 profile 实机验证(越权 handle / 越权 profile / token 用例),验证后清理,结果回填设计审计笔记(私有,未随仓库发布) §7.3 实测记录(2026-08-14);
 - [x] docs/security-crash-review.md 逐条标注“已修 / 已决策 / 待决策”。
 
 ---

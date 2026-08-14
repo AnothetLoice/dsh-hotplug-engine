@@ -25,8 +25,8 @@
 ## 2. 前置条件
 
 1. 01-contract.md / 02-design.md / adr/ 已定稿(2026-08-14 已过双 review);
-2. 演练夹具就绪:`harness-research/hotplug-drill/`(非 bundle 双面插件,供 e2e);
-3. pnpm 可用(`harness-research\.tools\bin\pnpm.cmd`);Node ^22.19。
+2. 演练夹具就绪:演练夹具(自备,非 bundle 双面插件,供 e2e);
+3. pnpm 可用(自备);Node ^22.19。
 
 ## 3. 任务拆分(文件级)
 
@@ -74,7 +74,7 @@
 - [ ] A1.7 backup 路径 A/B 与启动对账基础行为正确(ADR-0003);
 - [ ] A1.8 service 的 `ok:true` 语义 = 已应用(含观察窗口确认),非"已入队"(01-contract §4);
 - [ ] A1.9 演练级集成验证通过(2026-08-14 实测:临时 profile + 真实 cordis Context + 假 loader 模拟 HMR 重放,enable/disable/rollback 对 user/insert/bundle 三类行生效且 patch 复原,61/61 测试全绿);**真实 3080 宿主端到端验证依赖引擎对外通道(REST, M3)与服务重启,标记为 M3 验收项(本里程碑受限)**;
-- [ ] A1.10 实测发现(如有)已回填 `harness-research/hotplug-dev-audit.md`;
+- [ ] A1.10 实测发现(如有)已回填设计审计笔记(私有,未随仓库发布);
 - [ ] A1.11 未实现项未越界(无 install/REST/UI/官方机制重写)。
 
 ## 7. Review 记录(2026-08-14 M1 代码双 review)

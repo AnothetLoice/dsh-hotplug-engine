@@ -1,7 +1,7 @@
 # 服务契约 v1 — dsh-hotplug-engine(**已冻结 v1,2026-08-14**)
 
 > 文档编号:`hotplug-engine-CONTRACT-01` | 性质:**契约(权威,消费方依赖,已冻结 v1)** | 版本:1.0(2026-08-14 冻结)
-> 上位约束:`harness-research/hotplug-engine-design.md` §2-§5(不得偏离);机制事实以 `harness-research/hotplug-dev-audit.md` 为准
+> 上位约束:设计基线(私有工作笔记,未随仓库发布) §2-§5(不得偏离);机制事实以设计审计笔记(私有,未随仓库发布)为准
 > 适用对象:市场/agent/宿主插件等**消费方**、引擎实现者
 > 规范关键词:MUST / MUST NOT / SHOULD / SHOULD NOT / MAY(RFC 语义)
 > **冻结条件已达成(2026-08-14)**:M1–M4 全量实现完成(166/166 测试全绿、typecheck 零错误、发布包实机验证通过)+ M4 冻结门双 subagent review 通过(架构:有条件通过→major M1 已修;一致性:需修正项全部修正)。冻结后:v1 内新增能力 MUST 向后兼容(旧消费方忽略新字段);契约语义变化 → 升 v2。
@@ -231,7 +231,7 @@ onEvent(listener: (e: EngineEvent) => void): () => void
 ## 10. 版本与兼容
 
 - 本契约 v1 冻结于**全量首版实现(M1–M4 完成)并经双 subagent review 通过**;v1 内新增能力 MUST 向后兼容(旧消费方忽略新字段);
-- 官方内核(preview)行为变化时:先更新 `harness-research/hotplug-dev-audit.md` 依据,再评估契约影响;契约语义变化 → 升 v2;
+- 官方内核(preview)行为变化时:先更新设计审计笔记(私有,未随仓库发布)依据,再评估契约影响;契约语义变化 → 升 v2;
 - 契约文档为本仓库 `docs/01-contract.md`(本文件);类型实现派生文件 MUST 与本文件一致(不一致时以本文件为权威,先改本文件)。
 
 ---

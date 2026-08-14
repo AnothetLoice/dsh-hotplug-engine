@@ -18,7 +18,7 @@
  *     disabled: true
  *   # dsh-hotplug-engine:managed:end
  *
- * YAML traps handled (community-verified, see harness-research audit §3.2):
+ * YAML traps handled (community-verified, see the design audit notes §3.2):
  *  - an empty-array document line (`[]`) must be dropped before appending any
  *    row, or the file becomes a two-document YAML and fails to start;
  *  - package names starting with `@` must be single-quoted (bare `@` is a

@@ -1,7 +1,7 @@
 # 详细设计 — dsh-hotplug-engine
 
 > 文档编号:`hotplug-engine-DESIGN-02` | 性质:详细设计(实现蓝图) | 版本:0.1(2026-08-14)
-> 上位约束:契约 `docs/01-contract.md`(权威);设计基线 `harness-research/hotplug-engine-design.md`;机制事实 `harness-research/hotplug-dev-audit.md`
+> 上位约束:契约 `docs/01-contract.md`(权威);设计基线(私有工作笔记,未随仓库发布);机制事实(设计审计笔记,私有,未随仓库发布)
 > 规范关键词:MUST / MUST NOT / SHOULD / SHOULD NOT / MAY
 
 ---
@@ -266,7 +266,7 @@ disable(entryId) / enable(entryId)
 |---|---|---|
 | patch 写入 | 追加/摘除/原位刷新 managed block;陷阱用例(空文档 `[]`/@ 引号/注释-only);幂等;**恶意包名拒(含 `'`/`:` 等注入样本)**;slugify 碰撞 | **真实临时文件 + 真实解析**,不直调内部函数 |
 | manifest | bundles 增删 + in-box 保护 + 原子写;与官方 CLI reconcile 输出等价性对拍(见 ADR-0005) | 真实临时 profile 目录 |
-| quality | 好包过/坏包拒(缺入口/裸导入/缺 client bundle) | 用 `harness-research/hotplug-drill/` 与构造坏包夹具 |
+| quality | 好包过/坏包拒(缺入口/裸导入/缺 client bundle) | 用演练夹具(自备)与构造坏包夹具 |
 | health | 观察窗口 active/failed/超时三分支;**同块全行对账**(目标 active 但邻行 failed);回滚路径 A/B(hash 对账 + 按块摘除) | 注入假 loader 树 |
 | startup-reconcile | 孤儿 insert 块自动摘除;未完结操作标记 interrupted;孤儿依赖告警 | 构造残留夹具 + 真实临时 profile |
 | queue | 串行性、CONFLICT 去重锁定、operationId | 单元 |
@@ -283,4 +283,4 @@ disable(entryId) / enable(entryId)
 
 ---
 
-*实现按 M1→M4 推进;每阶段过 typecheck + 测试,写操作在演练 profile 实机验证后回填 `harness-research/hotplug-dev-audit.md` 实测记录。*
+*实现按 M1→M4 推进;每阶段过 typecheck + 测试,写操作在演练 profile 实机验证后回填设计审计笔记(私有,未随仓库发布)实测记录。*

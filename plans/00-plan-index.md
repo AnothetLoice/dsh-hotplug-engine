@@ -1,7 +1,7 @@
 # 实施计划总览 — dsh-hotplug-engine
 
 > 文档编号:`hotplug-engine-PLAN-00` | 性质:实施计划(总览) | 版本:0.1(2026-08-14)
-> 上位约束:02-design §12(M1–M4 顺序)、01-contract v1(契约)、adr/ 决策;机制事实 `harness-research/hotplug-dev-audit.md`
+> 上位约束:02-design §12(M1–M4 顺序)、01-contract v1(契约)、adr/ 决策;机制事实以设计审计笔记为据(私有,未随仓库发布)
 > 规范关键词:MUST / MUST NOT / SHOULD / SHOULD NOT / MAY
 
 ---
@@ -43,7 +43,7 @@ M1(启停回滚) ─→ M2(安装) ─→ M3(对外) ─→ M4(加固+冻结)
 
 ## 4. 测试总策略(跨阶段)
 
-1. **路径要求**(AGENTS.md 原则 5):单元/集成测试 MUST 走真实生产路径——patch 写入用**真实临时文件 + 真实解析**;安装/回滚 e2e 用 `harness-research/hotplug-drill/` 夹具;禁止直调内部函数绕过;全绿 ≠ 路径真实;
+1. **路径要求**(AGENTS.md 原则 5):单元/集成测试 MUST 走真实生产路径——patch 写入用**真实临时文件 + 真实解析**;安装/回滚 e2e 用演练夹具(自备);禁止直调内部函数绕过;全绿 ≠ 路径真实;
 2. **分层测试矩阵**:
 
 | 层 | 工具 | 夹具 | 说明 |
@@ -54,7 +54,7 @@ M1(启停回滚) ─→ M2(安装) ─→ M3(对外) ─→ M4(加固+冻结)
 | 契约一致性 | 人工对照(review 项) | — | `src/contract/types.ts` vs `01-contract.md` §3 |
 
 3. **安全用例必含**:恶意包名(含 `'`/`:`)、`!!js` 注入样本、GATE detail 转义、slugify 碰撞;
-4. **每个里程碑交付时**:`pnpm typecheck` 零错误 + `pnpm test` 全绿 + 写操作在演练 profile 实机验证后回填 `harness-research/hotplug-dev-audit.md` 实测记录。
+4. **每个里程碑交付时**:`pnpm typecheck` 零错误 + `pnpm test` 全绿 + 写操作在演练 profile 实机验证后回填设计审计笔记(私有,未随仓库发布)实测记录。
 
 ## 5. 验收总表(各里程碑详细 checklist 见对应计划)
 

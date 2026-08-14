@@ -55,7 +55,7 @@
 
 | 层 | 用例 | 夹具 | 路径要求 |
 |---|---|---|---|
-| quality 单元 | 好包过;缺入口拒;裸导入(未声明且非 Loader 提供)拒;缺 client bundle 拒 | `harness-research/hotplug-drill/` + 构造坏包夹具(真实临时包目录) | 真实包解析路径 |
+| quality 单元 | 好包过;缺入口拒;裸导入(未声明且非 Loader 提供)拒;缺 client bundle 拒 | 演练夹具(自备) + 构造坏包夹具(真实临时包目录) | 真实包解析路径 |
 | service 集成(转义) | GATE detail 含 HTML 特殊字符 → 已转义(escapeHtml 在 service 层,2026-08-14 复核修正矩阵位置) | 坏包夹具 + fake pnpm | install.spec 真实路径 |
 | installer 单元 | pnpm 探测(缺 pnpm → 明确错误);spawn 数组参数(注入假 pnpm 捕获 argv,验证无 shell 拼接);Windows 分支(cmd.exe /c);包形态判定(bundle/非 bundle) | 注入假 pnpm 可执行脚本 | 真实 spawn 路径 |
 | install 流程集成 | 非 bundle:装依赖→挂行→观察窗口 active 成功;failed→自动回滚;超时→自动回滚;bundle:写 bundles + restartRequired(不写 insert 行) | 临时 profile + 假 loader | 真实文件 + 真实 pnpm(或假 pnpm) |
