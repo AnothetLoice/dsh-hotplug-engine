@@ -16,7 +16,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 import { EngineError, ErrorCodes } from '../contract/types.ts'
 import { writeManifestAtomic, type ProfileManifest } from './manifest.ts'
@@ -56,8 +56,28 @@ export function backupDir(dshHomePath: string): string {
   return join(dshHomePath, 'backups', 'hotplug-engine')
 }
 
+/**
+ * Strict rollback-handle format (M5 H2, contract §8): the ONLY accepted
+ * operation-id shape is the one OperationQueue generates (queue.ts:41:
+ * `op-<Date.now()>-<seq>`). Rejecting everything else closes the path
+ * traversal surface before an external string can reach the filesystem.
+ */
+export function assertSafeOperationId(operationId: string): void {
+  if (!/^op-\d+-\d+$/.test(operationId)) {
+    throw new EngineError(ErrorCodes.ROLLBACK_INVALID, `invalid rollback handle: ${JSON.stringify(operationId)}`)
+  }
+}
+
 function sidecarPath(dir: string, operationId: string): string {
   return join(dir, `${operationId}.json`)
+}
+
+/** Whether `candidate` resolves to a path inside `root` (defense in depth). */
+function isWithin(root: string, candidate: string): boolean {
+  const rel = relative(resolve(root), resolve(candidate))
+  // Boundary check is segment-based: only a leading '..' segment escapes the
+  // root, so legit sub-names like '...x' are never misclassified (review 2026-08-14).
+  return rel === '' || (!isAbsolute(rel) && rel.split(sep)[0] !== '..')
 }
 
 /** Create a pre-operation backup for a profile directory. */
@@ -97,7 +117,12 @@ export function finalizeBackup(dshHomePath: string, handle: BackupHandle): void 
 
 /** Load a persisted handle from its operation id. */
 export function loadBackup(dshHomePath: string, operationId: string): BackupHandle | undefined {
-  const path = sidecarPath(backupDir(dshHomePath), operationId)
+  assertSafeOperationId(operationId)
+  const dir = backupDir(dshHomePath)
+  const path = sidecarPath(dir, operationId)
+  // Defense in depth: even a format-valid id must resolve inside the backup
+  // dir (guards against any future caller that skips assertSafeOperationId).
+  if (!isWithin(dir, path)) return undefined
   if (!existsSync(path)) return undefined
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as BackupHandle
@@ -111,11 +136,38 @@ function persistSidecar(dir: string, handle: BackupHandle): void {
 }
 
 /**
+ * M5 H2 layer 2: a rollback handle's stored paths must all stay within the
+ * engine-owned roots — backups under the backup dir, targets under the
+ * profiles root. Throws ROLLBACK_INVALID otherwise (tampered sidecar).
+ */
+function assertSafeBackupPaths(dshHomePath: string, handle: BackupHandle): void {
+  const backups = backupDir(dshHomePath)
+  for (const path of [handle.patchBackup, handle.manifestBackup]) {
+    if (path.length === 0) continue
+    if (!isWithin(backups, path)) {
+      throw new EngineError(ErrorCodes.ROLLBACK_INVALID, `unsafe backup path in rollback handle: ${path}`)
+    }
+  }
+  const profilesRoot = join(dshHomePath, 'profiles')
+  for (const path of [handle.patchPath, handle.manifestPath]) {
+    if (path.length === 0) continue
+    if (!isWithin(profilesRoot, path)) {
+      throw new EngineError(ErrorCodes.ROLLBACK_INVALID, `unsafe target path in rollback handle: ${path}`)
+    }
+  }
+}
+
+/**
  * Roll back an operation by its handle.
  * @returns { mode: 'restore' | 'block-scoped' } which path was taken.
  * @throws {EngineError} ROLLBACK_NOT_FOUND / ROLLBACK_FAILED.
  */
 export function rollbackByHandle(dshHomePath: string, handle: BackupHandle): { mode: 'restore' | 'block-scoped' } {
+  // M5 H2 layer 2: re-validate the sidecar's stored paths — they must stay
+  // inside the backup dir (backups) and the profile root (targets). This
+  // keeps a tampered sidecar from redirecting writes/reads outside the
+  // engine's owned directories even if a valid-format id slipped through.
+  assertSafeBackupPaths(dshHomePath, handle)
   let current: string
   try {
     current = readFileSync(handle.patchPath, 'utf8')

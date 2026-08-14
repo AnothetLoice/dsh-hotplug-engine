@@ -326,11 +326,36 @@ describe('service: rollback', () => {
     expect(readFileSync(patchPath, 'utf8')).toBe(before)
   })
 
-  it('rollback with an unknown handle fails with ROLLBACK_NOT_FOUND', async () => {
+  it('rollback with an unknown (but format-valid) handle fails with ROLLBACK_NOT_FOUND', async () => {
     const { svc } = setup()
-    const r = await svc.rollback('op-missing')
+    const r = await svc.rollback('op-999999-1')
     expect(r.ok).toBe(false)
     expect(r.errors?.[0]?.code).toBe(ErrorCodes.ROLLBACK_NOT_FOUND)
+  })
+
+  // M5 H2: external handles must match op-<ts>-<seq> before touching the fs.
+  it('rejects a path-traversal handle with ROLLBACK_INVALID', async () => {
+    const { svc } = setup()
+    for (const bad of ['../x', 'op-1/../../x', 'op-1/..', 'C:/evil', 'a/b', 'op-x']) {
+      const r = await svc.rollback(bad)
+      expect(r.ok, JSON.stringify(bad)).toBe(false)
+      expect(r.errors?.[0]?.code, JSON.stringify(bad)).toBe(ErrorCodes.ROLLBACK_INVALID)
+    }
+  })
+
+  it('still rolls back a valid-format handle (format gate does not break legit ids)', async () => {
+    const { svc, states, patchPath } = setup()
+    const before = readFileSync(patchPath, 'utf8')
+    const d = svc.disable('row-a')
+    await sleep(150)
+    states.set('row-a', { disabled: true, phase: null })
+    const dr = await d
+    expect(dr.ok).toBe(true)
+    const rb = svc.rollback(dr.rollbackHandle!)
+    await sleep(150)
+    const rr = await rb
+    expect(rr.ok).toBe(true)
+    expect(readFileSync(patchPath, 'utf8')).toBe(before)
   })
 })
 

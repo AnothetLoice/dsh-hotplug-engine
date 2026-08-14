@@ -31,7 +31,7 @@ import {
 } from './manifest.ts'
 import {
   createBackup, finalizeBackup, loadBackup, rollbackByHandle,
-  backupDir, hashFile, hash12, type BackupHandle,
+  backupDir, hashFile, hash12, assertSafeOperationId, type BackupHandle,
 } from './backup.ts'
 import {
   readFiberPhase, rowExists, waitForGone, waitForHealthWithBlock, waitForStable,
@@ -232,6 +232,9 @@ export class HotplugEngineService extends Service {
       const target = this.resolveProfile(opts.profile)
       dir = this.dirOf(target)
       isHost = this.isHostProfile(target)
+      // M5 H2: reject non-op-<ts>-<seq> handles BEFORE they reach the
+      // filesystem (path-traversal surface; queue.ts:41 is the generator).
+      assertSafeOperationId(handle)
     } catch (error) {
       return Promise.resolve(failureResult(error))
     }
