@@ -40,6 +40,7 @@ import {
 import { OperationQueue } from './queue.ts'
 import { AuditLog } from './audit.ts'
 import { qualityCheck } from './quality.ts'
+import { sanitizeTerminal } from './sanitize.ts'
 import {
   assertSafeSpec, findPnpm, isLocalDirSpec, packageHasBundlePatch,
   pnpmAdd, pnpmRemove, resolveInstalledName,
@@ -319,7 +320,7 @@ export class HotplugEngineService extends Service {
           }
           const add = await pnpmAdd(dir, spec, pnpm)
           if (!add.ok) {
-            throw new EngineError(ErrorCodes.INSTALL_FAILED, `pnpm add failed (exit ${add.exitCode}):\n${add.output.slice(0, 2000)}`)
+            throw new EngineError(ErrorCodes.INSTALL_FAILED, `pnpm add failed (exit ${add.exitCode}):\n${sanitizeTerminal(add.output)}`)
           }
           const manifest = readManifest(dir)
           const name = resolveInstalledName(manifest.dependencies ?? {}, spec)
@@ -430,7 +431,7 @@ export class HotplugEngineService extends Service {
           }
           const rm = await pnpmRemove(dir, name, pnpm)
           if (!rm.ok) {
-            throw new EngineError(ErrorCodes.INSTALL_FAILED, `pnpm remove failed (exit ${rm.exitCode}):\n${rm.output.slice(0, 2000)}`)
+            throw new EngineError(ErrorCodes.INSTALL_FAILED, `pnpm remove failed (exit ${rm.exitCode}):\n${sanitizeTerminal(rm.output)}`)
           }
           const manifest = readManifest(dir)
           const wasBundle = readBundles(dir).includes(name)

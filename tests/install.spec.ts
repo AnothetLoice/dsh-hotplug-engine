@@ -283,6 +283,51 @@ describe('install: pnpm failures', () => {
     expect(r.ok).toBe(false)
     expect(r.errors?.[0]?.code).toBe(ErrorCodes.INSTALL_FAILED)
   })
+
+  // M5 M2: pnpm failure output with ANSI ESC / control chars must be
+  // sanitized before entering the message (terminal / log injection).
+  it('sanitizes ANSI/control characters from pnpm failure output', async () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'hpe-ansi-'))
+    const profileDir = join(dshHome, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), EMPTY_TEMPLATE, 'utf8')
+    writeManifestAtomic(profileDir, { name: 'dsh-profile-web', private: true, dependencies: {} })
+    const ctx = new Context()
+    ctx.provide('loader', makeLoader(new Map<string, RowState>()))
+    // a fake pnpm that fails with ANSI escape + control chars in output
+    const root = mkdtempSync(join(tmpdir(), 'hpe-ansipnpm-'))
+    const evilCmd = join(root, 'evil-pnpm.cmd')
+    // ESC [31m red text, ESC [2J clear screen, BEL, and a forged newline line
+    writeFileSync(evilCmd, [
+      '@echo off',
+      'echo <ESC>[31mred error<ESC>[0m<ESC>[2J',
+      'echo <BEL>fake_log_injection',
+      'exit /b 1',
+      '',
+    ].join('\r\n').replaceAll('<ESC>', String.fromCharCode(27)).replaceAll('<BEL>', String.fromCharCode(7)), 'utf8')
+    const svc = new HotplugEngineService(ctx, {
+      dshHomePath: dshHome, hostProfile: 'web', observationWindowMs: 500, pollIntervalMs: 40, pnpmPath: evilCmd,
+    })
+    const r = await svc.install('some-npm-pkg')
+    expect(r.ok).toBe(false)
+    expect(r.errors?.[0]?.code).toBe(ErrorCodes.INSTALL_FAILED)
+    const message = r.message
+    // The ESC byte itself (0x1B) and BEL (0x07) are stripped — the terminal
+    // injection primitive is gone; leftover '[31m' without ESC is inert text.
+    expect(message).not.toContain(String.fromCharCode(27)) // no ESC
+    expect(message).not.toContain(String.fromCharCode(7)) // no BEL
+    expect(message).toContain('red error') // visible text preserved
+    expect(message).toContain('fake_log_injection') // printable chars survive
+    // output-derived portion (after the message prefix + its newline)
+    // carries no C0 control bytes: the sanitized pnpm output.
+    const nl = message.indexOf('\n')
+    const outputPart = nl === -1 ? '' : message.slice(nl + 1)
+    expect(outputPart.length).toBeGreaterThan(0)
+    for (const ch of outputPart) {
+      const code = ch.charCodeAt(0)
+      expect(code >= 0x20 && code < 0x7f || code >= 0x80, JSON.stringify(code)).toBe(true)
+    }
+  })
 })
 
 describe('quality detail escaping', () => {
