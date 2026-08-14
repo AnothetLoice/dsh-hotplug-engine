@@ -361,6 +361,18 @@ describe('service: rollback', () => {
     }
   })
 
+  // M5 fix: failure results must omit undefined optional fields — the harness
+  // rejects tool output that is not lossless JSON (`operationId: undefined` broke
+  // early-failure results like bad handle/profile).
+  it('failure result omits undefined optional fields (lossless JSON)', async () => {
+    const { svc } = setup()
+    const r = await svc.rollback('../x')
+    expect(r.ok).toBe(false)
+    expect(r.errors?.[0]?.code).toBe(ErrorCodes.ROLLBACK_INVALID)
+    expect('operationId' in r).toBe(false)
+    expect(JSON.parse(JSON.stringify(r))).toEqual(r)
+  })
+
   it('still rolls back a valid-format handle (format gate does not break legit ids)', async () => {
     const { svc, states, patchPath } = setup()
     const before = readFileSync(patchPath, 'utf8')

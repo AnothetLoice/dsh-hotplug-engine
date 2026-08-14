@@ -1,6 +1,6 @@
 {
   "name": "dsh-hotplug-engine",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DSH hot-plug execution engine: a reliable install/enable/disable/rollback/audit service for plugin marketplaces, agents, and host plugins (execution layer, not a marketplace).",
   "keywords": [
     "deepseek",

@@ -996,10 +996,12 @@ function declaresClient(pkgDir: string): boolean {
 function failureResult(error: unknown, operationId?: string, note = ''): MutationResult {
   const message = error instanceof Error ? error.message : String(error)
   const code = codeOf(error)
-  return {
-    ok: false,
-    message: message + note,
-    operationId,
-    errors: code !== undefined ? [{ code, detail: message }] : undefined,
-  }
+  // M5 fix: omit optional fields instead of leaving them explicitly undefined.
+  // An `operationId: undefined` value fails the harness tool-output
+  // "lossless JSON" check, so early-failure results (bad handle/profile/
+  // conflict) could not be surfaced to the model.
+  const result: MutationResult = { ok: false, message: message + note }
+  if (operationId !== undefined) result.operationId = operationId
+  if (code !== undefined) result.errors = [{ code, detail: message }]
+  return result
 }
