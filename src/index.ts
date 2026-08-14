@@ -35,7 +35,11 @@ export function apply(ctx: Context): void {
   if (webServer !== undefined) {
     ctx.effect(() => {
       const streams = new Set<EventStream>()
-      const disposers = makeRoutes(service, { onStream: stream => { streams.add(stream) } })
+      // M5 H1: optional write-endpoint token gate (opt-in). The env var is
+      // the host-side wiring; programmatic consumers may pass restToken to
+      // makeRoutes directly. Absent → v1 behavior (same-origin only).
+      const restToken = process.env.DSH_HOTPLUG_REST_TOKEN
+      const disposers = makeRoutes(service, { onStream: stream => { streams.add(stream) } }, { restToken })
         .map(route => webServer.register(route))
       return () => {
         // Close in-flight SSE connections (they hold service listeners).

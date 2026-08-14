@@ -16,6 +16,7 @@ import type {
   AuditRecord, EngineEvent, EngineSnapshot, MutationResult, OperationInfo, RuntimeEntry,
 } from '../contract/types.ts'
 import { EngineError, ErrorCodes } from '../contract/types.ts'
+import { timingSafeEqual } from 'node:crypto'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { EventStream, type SseResponse } from './events.ts'
 
@@ -79,8 +80,16 @@ export interface RouteHooks {
   onStream?: (stream: EventStream) => void
 }
 
+/** Optional write-endpoint token gate options (M5 H1, opt-in). When
+ * `restToken` is configured, mutating POST endpoints additionally require
+ * `Authorization: Bearer <token>` (constant-time comparison); with no token
+ * configured behavior is unchanged (same-origin only, v1 compatibility). */
+export interface RestTokenOptions {
+  restToken?: string
+}
+
 /** Build all 10 REST routes against one service (contract §5). */
-export function makeRoutes(service: RestService, hooks: RouteHooks = {}): Route[] {
+export function makeRoutes(service: RestService, hooks: RouteHooks = {}, options: RestTokenOptions = {}): Route[] {
   return [
     // GET snapshot?profile= → EngineSnapshot
     {
@@ -120,6 +129,7 @@ export function makeRoutes(service: RestService, hooks: RouteHooks = {}): Route[
       handler: async (req, res) => {
         if (!expectSameOrigin(req, res)) return
         if (!expectMethod(req, res, 'POST')) return
+        if (!expectBearerToken(req, res, options.restToken)) return
         const body = await expectJsonBody(req, res)
         if (body === undefined) return
         const spec = stringField(body, 'spec')
@@ -139,6 +149,7 @@ export function makeRoutes(service: RestService, hooks: RouteHooks = {}): Route[
       handler: async (req, res) => {
         if (!expectSameOrigin(req, res)) return
         if (!expectMethod(req, res, 'POST')) return
+        if (!expectBearerToken(req, res, options.restToken)) return
         const body = await expectJsonBody(req, res)
         if (body === undefined) return
         const name = stringField(body, 'name')
@@ -157,6 +168,7 @@ export function makeRoutes(service: RestService, hooks: RouteHooks = {}): Route[
       handler: async (req, res) => {
         if (!expectSameOrigin(req, res)) return
         if (!expectMethod(req, res, 'POST')) return
+        if (!expectBearerToken(req, res, options.restToken)) return
         const body = await expectJsonBody(req, res)
         if (body === undefined) return
         const entryId = stringField(body, 'entryId')
@@ -175,6 +187,7 @@ export function makeRoutes(service: RestService, hooks: RouteHooks = {}): Route[
       handler: async (req, res) => {
         if (!expectSameOrigin(req, res)) return
         if (!expectMethod(req, res, 'POST')) return
+        if (!expectBearerToken(req, res, options.restToken)) return
         const body = await expectJsonBody(req, res)
         if (body === undefined) return
         const entryId = stringField(body, 'entryId')
@@ -193,6 +206,7 @@ export function makeRoutes(service: RestService, hooks: RouteHooks = {}): Route[
       handler: async (req, res) => {
         if (!expectSameOrigin(req, res)) return
         if (!expectMethod(req, res, 'POST')) return
+        if (!expectBearerToken(req, res, options.restToken)) return
         const body = await expectJsonBody(req, res)
         if (body === undefined) return
         const handle = stringField(body, 'handle')
@@ -270,6 +284,27 @@ function expectSameOrigin(req: HttpRequest, res: SseResponse): boolean {
   if (isSameOriginRequest(req)) return true
   writeError(res, 403, RestCodes.FORBIDDEN, 'forbidden: same-origin request required')
   return false
+}
+
+/** Optional bearer-token gate for mutating POST endpoints (M5 H1, opt-in).
+ * With no token configured this is a no-op (v1 behavior preserved). With a
+ * token, requests MUST present `Authorization: Bearer <token>`; the compare
+ * is constant-time (crypto.timingSafeEqual) and 403 otherwise. */
+function expectBearerToken(req: HttpRequest, res: SseResponse, restToken: string | undefined): boolean {
+  if (restToken === undefined || restToken.length === 0) return true
+  const auth = header(req, 'authorization')
+  if (auth === undefined || !auth.startsWith('Bearer ')) {
+    writeError(res, 403, RestCodes.FORBIDDEN, 'forbidden: bearer token required for mutating endpoints')
+    return false
+  }
+  const presented = auth.slice('Bearer '.length)
+  const a = Buffer.from(presented)
+  const b = Buffer.from(restToken)
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    writeError(res, 403, RestCodes.FORBIDDEN, 'forbidden: invalid bearer token')
+    return false
+  }
+  return true
 }
 
 /** JSON body reader with validation: 400 on unparseable/oversized bodies. */

@@ -12,6 +12,7 @@ interface ReqInit {
   host?: string
   origin?: string
   secFetchSite?: string
+  auth?: string
   body?: string
 }
 
@@ -329,6 +330,93 @@ describe('rest: write failures are contained (M5 L5)', () => {
     res.writeHead = (status, headers) => { throw new Error('gone') }
     const handler = routes.find(r => r.path === REST_PATHS.snapshot)!.handler
     await expect(handler(makeReq({ remote: '10.0.0.1' }), res)).resolves.toBeUndefined()
+  })
+})
+
+// ── M5 H1: optional bearer-token gate on mutating endpoints ────────────────
+
+describe('rest: opt-in bearer token gate (M5 H1)', () => {
+  const TOKEN = 's3cret-token-abc'
+  const authReq = (init: ReqInit) => {
+    const headers: Record<string, string> = { host: init.host ?? '127.0.0.1:3080' }
+    if (init.origin !== undefined) headers['origin'] = init.origin
+    if (init.secFetchSite !== undefined) headers['sec-fetch-site'] = init.secFetchSite
+    if (init.auth !== undefined) headers['authorization'] = init.auth
+    const chunks: Buffer[] = init.body === undefined ? [] : [Buffer.from(init.body, 'utf8')]
+    return {
+      method: init.method ?? 'POST',
+      url: init.url ?? REST_PATHS.install,
+      socket: { remoteAddress: init.remote ?? '127.0.0.1' },
+      headers,
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) yield chunk
+      },
+    } as HttpRequest
+  }
+
+  it('no token configured → same-origin POST passes (v1 behavior preserved)', async () => {
+    const routes = makeRoutes(makeService(), {}, { restToken: undefined })
+    const res = makeRes()
+    await routes.find(r => r.path === REST_PATHS.install)!.handler(
+      authReq({ body: JSON.stringify({ spec: 'pkg-x' }) }), res)
+    expect(res.status).toBe(200)
+  })
+
+  it('token configured + missing/empty Authorization → 403 FORBIDDEN', async () => {
+    const routes = makeRoutes(makeService(), {}, { restToken: TOKEN })
+    const res = makeRes()
+    await routes.find(r => r.path === REST_PATHS.install)!.handler(
+      authReq({ body: JSON.stringify({ spec: 'pkg-x' }) }), res)
+    expect(res.status).toBe(403)
+    expect((res.body as { error: { code: string } }).error.code).toBe(RestCodes.FORBIDDEN)
+  })
+
+  it('token configured + wrong token → 403 FORBIDDEN (constant-time compare)', async () => {
+    const routes = makeRoutes(makeService(), {}, { restToken: TOKEN })
+    const res = makeRes()
+    await routes.find(r => r.path === REST_PATHS.install)!.handler(
+      authReq({ auth: 'Bearer wrong-token', body: JSON.stringify({ spec: 'pkg-x' }) }), res)
+    expect(res.status).toBe(403)
+    expect((res.body as { error: { code: string } }).error.code).toBe(RestCodes.FORBIDDEN)
+  })
+
+  it('token configured + non-Bearer scheme → 403 FORBIDDEN', async () => {
+    const routes = makeRoutes(makeService(), {}, { restToken: TOKEN })
+    const res = makeRes()
+    await routes.find(r => r.path === REST_PATHS.install)!.handler(
+      authReq({ auth: TOKEN, body: JSON.stringify({ spec: 'pkg-x' }) }), res)
+    expect(res.status).toBe(403)
+  })
+
+  it('token configured + correct token → 200 and mutation runs', async () => {
+    const service = makeService()
+    const routes = makeRoutes(service, {}, { restToken: TOKEN })
+    const res = makeRes()
+    await routes.find(r => r.path === REST_PATHS.install)!.handler(
+      authReq({ auth: `Bearer ${TOKEN}`, body: JSON.stringify({ spec: 'pkg-x' }) }), res)
+    expect(res.status).toBe(200)
+    expect(callsOf(service)['install']).toEqual([{ spec: 'pkg-x', opts: { profile: undefined, dryRun: undefined, caller: 'rest' } }])
+  })
+
+  it('read-only GET endpoints are NOT token-gated (same-origin suffices)', async () => {
+    const routes = makeRoutes(makeService(), {}, { restToken: TOKEN })
+    const res = makeRes()
+    await routes.find(r => r.path === REST_PATHS.snapshot)!.handler(makeReq(), res)
+    expect(res.status).toBe(200)
+  })
+
+  it('token gate applies to all five mutating endpoints', async () => {
+    for (const [path, body] of [
+      [REST_PATHS.uninstall, JSON.stringify({ name: 'pkg-x' })],
+      [REST_PATHS.enable, JSON.stringify({ entryId: 'row-a' })],
+      [REST_PATHS.disable, JSON.stringify({ entryId: 'row-a' })],
+      [REST_PATHS.rollback, JSON.stringify({ handle: 'op-1-1' })],
+    ] as const) {
+      const routes = makeRoutes(makeService(), {}, { restToken: TOKEN })
+      const res = makeRes()
+      await routes.find(r => r.path === path)!.handler(authReq({ body }), res)
+      expect(res.status, path).toBe(403)
+    }
   })
 })
 

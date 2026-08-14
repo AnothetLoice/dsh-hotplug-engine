@@ -160,6 +160,7 @@ onEvent(listener: (e: EngineEvent) => void): () => void
 
 - 只读端点 GET 无需额外权限(同源即足够,2026-08-14 M3 复核:与官方 webServer loopback 围栏对称,**所有端点**均过同源校验,只读端点不追加其他门禁);
 - 写端点(POST)MUST 校验同源;v1 不做 token 鉴权(见 ADR-0006),SHOULD 部署在可信网络内;
+- **可选写端点 token 门禁(M5 H1,加法式 opt-in,2026-08-14)**:宿主可通过构造 options `restToken`(或环境变量 `DSH_HOTPLUG_REST_TOKEN` 经 index.ts 传入)启用;启用后 5 个写端点(POST install/uninstall/enable/disable/rollback)在通过同源校验后,MUST 再携带 `Authorization: Bearer <token>`(crypto.timingSafeEqual 常量时间比较),否则 403 `HOTPLUG.REST.FORBIDDEN`。**未配置时行为 = 现状(同源即可),v1 兼容不变**;只读 GET 不受 token 门禁影响。生产环境 SHOULD 配置 token(见 ADR-0006 更新);
 - 错误返回:HTTP 200 + `MutationResult.ok=false`(业务错误)或 4xx(请求体非法/路径非法)。
 
 ## 6. agent 工具契约(`ctx.tools`)
@@ -201,12 +202,13 @@ onEvent(listener: (e: EngineEvent) => void): () => void
 | `HOTPLUG.INSTALL.NOT_FOUND` | 安装后无法解析实际包名 |
 | `HOTPLUG.ROLLBACK.NOT_FOUND` | 回滚句柄不存在/已消费 |
 | `HOTPLUG.ROLLBACK.FAILED` | 回滚执行失败 |
+| `HOTPLUG.ROLLBACK.INVALID` | 回滚句柄格式非法(非 op-<ts>-<seq>,M5 H2 路径穿越防线;2026-08-14 M5 新增) |
 | `HOTPLUG.OP.CONFLICT` | 串行队列冲突(理论上不发生,防御) |
 | `HOTPLUG.OP.INTERRUPTED` | 启动对账:未完结操作被重启打断(2026-08-14 M2 review 新增) |
 | `HOTPLUG.SPEC.UNSAFE` | install spec 含命令注入元字符(2026-08-14 M2 review 新增) |
 | `HOTPLUG.HMR.UNAVAILABLE` | 降级判定:hmr 服务不可用(模式=restart)。**保留码**:当前引擎以 `EngineSnapshot.mode` 表达降级,M3 REST/工具面按需使用 |
 | `HOTPLUG.REST.INVALID_BODY` | 请求体非法/缺必填字段/参数非法(4xx;2026-08-14 M3 新增,REST 传输层) |
-| `HOTPLUG.REST.FORBIDDEN` | 写端点同源校验失败(403;2026-08-14 M3 新增) |
+| `HOTPLUG.REST.FORBIDDEN` | 写端点同源校验失败,或配置 token 后 Bearer 缺失/不匹配(403;2026-08-14 M3 新增,M5 扩展) |
 | `HOTPLUG.REST.METHOD_NOT_ALLOWED` | 方法不匹配(405;2026-08-14 M3 新增) |
 | `HOTPLUG.REST.INTERNAL` | REST 处理器意外异常(500;防御性;2026-08-14 M3 新增) |
 

@@ -20,6 +20,7 @@
 ## 后果
 - REST 是"无鉴权 + 同源"形态,安全边界靠部署网络;写工具经审批策略兜底;
 - **REST 写路径无 agent 工具那套审批钩子**(同源 install 即执行任意包代码 = host 级妥协,比工具路径更弱)——**v2 候选**:为 install/uninstall 加可配置 token 或审批确认钩子(2026-08-14 review);
+- **M5 H1 落地(2026-08-14)**:采用**加法式可选 token 门禁**——'restToken' 构造 options(或 'DSH_HOTPLUG_REST_TOKEN' 环境变量经 index.ts 传入 makeRoutes);配置后写端点(POST)在通过同源围栏后 MUST 携带 'Authorization: Bearer <token>'(crypto.timingSafeEqual 常量时间比较),否则 403;未配置时行为=现状(v1 兼容)。已同步标注 01-contract §5/§8。**默认强制 token 属语义变更 → 升 v2,另行 ADR**(本 ADR 保持 v1 决策不变,仅登记可选项);
 - 工具与 REST 共享同一 service 实现,不存在两套逻辑;
 - 事件帧与快照的最终一致性是 UI 的刷新准则。
 
