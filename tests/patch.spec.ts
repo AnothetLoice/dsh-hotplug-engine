@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+// M5 L1/L2: partial fs mock so tests can inject one-shot renameSync
+// failures (Windows sharing violation) and observe tmp paths — everything
+// else delegates to the real fs.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    renameSync: vi.fn((...args: Parameters<typeof actual.renameSync>) => actual.renameSync(...args)),
+    writeFileSync: vi.fn((...args: Parameters<typeof actual.writeFileSync>) => actual.writeFileSync(...args)),
+  } as typeof import('node:fs')
+})
 import {
   EMPTY_TEMPLATE, addDisableBlock, addInsertRow, applyRowDisabled, applyRowEnabled,
   assertSafeEntryId, assertSafePackageName, ensureUniqueRowId, findTopLevelRow,
@@ -253,6 +265,60 @@ describe('patch: validation + atomic write', () => {
     const before = readFileSync(file, 'utf8')
     expect(codeOfThrow(() => writePatchAtomic(file, '- id: broken\n  x: ['))).toBe(ErrorCodes.PATCH_INVALID)
     expect(readFileSync(file, 'utf8')).toBe(before) // untouched
+  })
+
+  // M5 L1: the sync rename retry must survive a transient rename failure
+  // (Windows sharing violation) and converge within the tightened budget.
+  it('writePatchAtomic retries a transient rename failure (M5 L1 budget)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hpe-retry-'))
+    const file = join(dir, 'cordis.patch.yml')
+    const content = addInsertRow(TEMPLATE, 'hotplug-drill', '@dsh-drill/hotplug-drill')
+    const spy = vi.mocked(renameSync)
+    spy.mockClear() // ignore calls from earlier tests (shared module mock)
+    // Fail the first rename with EACCES (the HMR watcher briefly holds the
+    // target); the retry loop must converge on the next attempt.
+    spy.mockImplementationOnce(() => {
+      const err = new Error('EACCES') as NodeJS.ErrnoException
+      err.code = 'EACCES'
+      throw err
+    })
+    writePatchAtomic(file, content)
+    expect(readFileSync(file, 'utf8')).toBe(content)
+    expect(spy).toHaveBeenCalledTimes(2) // failed attempt + successful retry
+    spy.mockClear()
+  })
+
+  // M5 L2: tmp names use a crypto-random hex suffix (unique, non-guessable).
+  it('writePatchAtomic tmp names carry a crypto hex suffix, unique per write', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hpe-tmp-'))
+    const file = join(dir, 'cordis.patch.yml')
+    // Capture every tmp path the atomic writer touches (before rename).
+    const writeSpy = vi.mocked(writeFileSync)
+    const tmpPaths: string[] = []
+    const orig = writeSpy.getMockImplementation()
+    writeSpy.mockImplementation((p, data, opts) => {
+      const path = String(p)
+      if (path.endsWith('.tmp')) tmpPaths.push(path)
+      return orig ? orig(p, data, opts) : undefined
+    })
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        writePatchAtomic(file, addInsertRow(TEMPLATE, `row-${i}`, `pkg-${i}`))
+      }
+      expect(tmpPaths.length).toBe(5)
+      // format: <patchPath>.<pid>.<16 hex>.tmp (crypto random, full 64-bit)
+      const hexRe = /^[0-9a-f]{16}$/
+      const suffixes = tmpPaths.map(p => p.match(/\.([0-9a-f]{16})\.tmp$/)?.[1] ?? '')
+      for (const s of suffixes) expect(hexRe.test(s), s).toBe(true)
+      // uniqueness across the five writes (collision probability ~2^-64)
+      expect(new Set(suffixes).size).toBe(5)
+    } finally {
+      writeSpy.mockImplementation(orig ?? (() => {}))
+      writeSpy.mockClear()
+    }
+    // no .tmp residue after successful writes
+    expect(readdirSync(dir).filter(f => f.endsWith('.tmp'))).toEqual([])
+    expect(readFileSync(file, 'utf8')).toContain('row-4')
   })
 })
 

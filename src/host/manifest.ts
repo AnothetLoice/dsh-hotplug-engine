@@ -18,6 +18,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { randomBytes } from 'node:crypto'
 import { EngineError, ErrorCodes } from '../contract/types.ts'
 
 /** Profile name whitelist (path traversal guard). */
@@ -137,7 +138,8 @@ export function readDependencies(dir: string): string[] {
 export function writeManifestAtomic(dir: string, manifest: ProfileManifest): void {
   const path = join(dir, 'package.json')
   const content = JSON.stringify(manifest, null, 2) + '\n'
-  const tmp = `${path}.${process.pid}.${Math.random().toString(16).slice(2, 10)}.tmp`
+  // M5 L2: crypto-random tmp suffix (Math.random is not a secure entropy source).
+  const tmp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
   writeFileSync(tmp, content, 'utf8')
   try {
     renameSync(tmp, path)

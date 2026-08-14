@@ -44,7 +44,7 @@
 
 import { load, JSON_SCHEMA, Type } from 'js-yaml'
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { EngineError, ErrorCodes } from '../contract/types.ts'
 
@@ -598,17 +598,24 @@ export function writePatchAtomic(patchPath: string, content: string): void {
   }
 }
 
-const RENAME_RETRY_LIMIT = 10
-const RENAME_RETRY_DELAY_MS = 50
+// M5 L1 (plan A7): sync busy-wait retry budget tightened 10×50ms → 5×20ms
+// (≈300ms worst case vs ≈2.75s). Kept synchronous to avoid touching the
+// sync call sites (writePatchAtomic is used by the constructor-time
+// startupReconcile and rollbackByHandle); async-with-backoff stays a v2
+// candidate. The HMR watcher's brief lock is almost always <100ms.
+const RENAME_RETRY_LIMIT = 5
+const RENAME_RETRY_DELAY_MS = 20
 
 function sleepSync(ms: number): void {
   const end = Date.now() + ms
   while (Date.now() < end) { /* busy wait */ }
 }
 
-/** Random suffix for unique tmp names (crypto random, hex). */
+/** Random suffix for unique tmp names (M5 L2: crypto random, hex — the
+ * previous sha1(Date.now()+Math.random()) gave only non-crypto entropy).
+ * Full 64-bit entropy: 8 bytes → 16 hex chars, no truncation. */
 function randomSuffix(): string {
-  return createHash('sha1').update(`${Date.now()}-${Math.random()}`).digest('hex').slice(0, 8)
+  return randomBytes(8).toString('hex')
 }
 
 /** Resolve the patch file path inside a profile directory. */
