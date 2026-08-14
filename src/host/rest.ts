@@ -358,14 +358,21 @@ async function readJsonBody(req: HttpRequest): Promise<Record<string, unknown> |
   }
 }
 
-/** One JSON response. */
+/** One JSON response. M5 L5: a half-closed connection can throw from
+ * writeHead/end — swallow and log so read-only handlers never reject
+ * unhandled (respondMutation already has its own catch; this closes the
+ * read-only GET + error branches in one place). */
 function writeJson(res: SseResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body)
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'referrer-policy': 'no-referrer',
-  })
-  res.end(payload)
+  try {
+    const payload = JSON.stringify(body)
+    res.writeHead(status, {
+      'content-type': 'application/json; charset=utf-8',
+      'referrer-policy': 'no-referrer',
+    })
+    res.end(payload)
+  } catch (error) {
+    console.warn('[hotplug-engine] rest response write failed:', error)
+  }
 }
 
 /** 4xx/5xx error body: { error: { code, message } }. */

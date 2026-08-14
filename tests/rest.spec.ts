@@ -302,6 +302,36 @@ describe('rest: POST mutations (same-origin gated)', () => {
   })
 })
 
+// ── M5 L5: half-closed response writes must not reject handlers ────────────
+
+describe('rest: write failures are contained (M5 L5)', () => {
+  it('a throwing writeHead on a read-only GET does not reject the handler', async () => {
+    const routes = makeRoutes(makeService())
+    const res = makeRes()
+    res.writeHead = (status, headers) => { throw new Error('connection closed') }
+    const handler = routes.find(r => r.path === REST_PATHS.snapshot)!.handler
+    await expect(handler(makeReq(), res)).resolves.toBeUndefined()
+  })
+
+  it('a throwing end on a mutation response is contained (respondMutation path)', async () => {
+    const routes = makeRoutes(makeService())
+    const res = makeRes()
+    res.end = () => { throw new Error('socket gone') }
+    const handler = routes.find(r => r.path === REST_PATHS.install)!.handler
+    await expect(handler(
+      makeReq({ method: 'POST', body: JSON.stringify({ spec: 'pkg-x' }) }), res),
+    ).resolves.toBeUndefined()
+  })
+
+  it('an error response write failure is contained (writeError path)', async () => {
+    const routes = makeRoutes(makeService())
+    const res = makeRes()
+    res.writeHead = (status, headers) => { throw new Error('gone') }
+    const handler = routes.find(r => r.path === REST_PATHS.snapshot)!.handler
+    await expect(handler(makeReq({ remote: '10.0.0.1' }), res)).resolves.toBeUndefined()
+  })
+})
+
 // ── error-code single source ────────────────────────────────────────────────
 
 describe('rest: REST codes live in the single ErrorCodes source (contract §8)', () => {
