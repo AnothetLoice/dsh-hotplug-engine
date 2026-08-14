@@ -1,0 +1,6 @@
+# dsh-hotplug-engine bundle patch: mounts the engine's own host service row.
+# Applied as a profile bundle layer over dsh-base; the row id is fixed so the
+# profile patch layer can disable the engine itself (that unloads the service).
+- insert:
+    - id: hotplug-engine
+      name: 'dsh-hotplug-engine'

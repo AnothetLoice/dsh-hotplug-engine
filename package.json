@@ -1,0 +1,80 @@
+{
+  "name": "dsh-hotplug-engine",
+  "version": "0.1.0",
+  "description": "DSH hot-plug execution engine: a reliable install/enable/disable/rollback/audit service for plugin marketplaces, agents, and host plugins (execution layer, not a marketplace).",
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "hotplug",
+    "hot-plug",
+    "plugin-manager"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.host.json && tsc --noEmit -p tsconfig.client.json",
+    "build": "tsc -p tsconfig.host.json && tsc -p tsconfig.client.json && tsdown --config tsdown.client.config.ts",
+    "build:host": "tsc -p tsconfig.host.json",
+    "build:client": "tsc -p tsconfig.client.json && tsdown --config tsdown.client.config.ts",
+    "test": "vitest run"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
+    "@deepseek-ai/dsh-host-webserver": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "jsdom": "^24.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsdown": "^0.22.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2",
+    "unrun": "^0.2.39",
+    "vitest": "^2.1.0"
+  },
+  "license": "MIT"
+}

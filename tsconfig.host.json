@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "outDir": "lib",
+    "rootDir": "src",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "experimentalDecorators": false
+  },
+  "include": [
+    "src/index.ts",
+    "src/contract/types.ts",
+    "src/host/patch.ts",
+    "src/host/manifest.ts",
+    "src/host/queue.ts",
+    "src/host/backup.ts",
+    "src/host/health.ts",
+    "src/host/audit.ts",
+    "src/host/service.ts",
+    "src/host/events.ts",
+    "src/host/rest.ts",
+    "src/host/tools.ts"
+  ]
+}
