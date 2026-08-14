@@ -10,8 +10,8 @@ fs.writeFileSync(path.join(profileDir, 'package.json'), JSON.stringify({ name: '
 fs.writeFileSync(path.join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\n')
 fs.writeFileSync(path.join(profileDir, 'pnpm-lock.yaml'), 'lockfileVersion: "9.0"\n')
 
-const pnpm = 'D:/code/dsh/harness-research/.tools/bin/pnpm.cmd'
-const spec = 'D:/code/dsh/harness-research/hotplug-drill'
+const pnpm = '<workspace>/.tools/bin/pnpm.cmd' // (redacted: dev-machine pnpm binary path)
+const spec = '<workspace>/hotplug-drill' // (redacted: local drill fixture path)
 const cmdline = `""${pnpm}" --dir "${profileDir}" add "${spec}""`
 const r = spawnSync('cmd.exe', ['/d', '/s', '/c', cmdline], { encoding: 'utf8', windowsVerbatimArguments: true, timeout: 120000 })
 console.log('status:', r.status)

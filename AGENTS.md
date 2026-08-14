@@ -12,7 +12,7 @@ This file provides guidance to agent tools when working with code in this reposi
   - `hotplug-analysis.md`、`official-harness-architecture.md`、`SESSION-HANDOVER.md` — 机制与上下文;
   - `hotplug-drill/` — 实测演练包(全链路已验证,可复用为测试夹具)。
 - **本项目文档**(2026-08-14 已建,首版未冻结):`docs/00-index.md`(索引+决策总览+review 记录)、`docs/01-contract.md`(**契约 v1,权威**)、`docs/02-design.md`(详细设计,M1-M4 实施顺序)、`docs/adr/ADR-0001..0007`(锁定决策)、**`plans/00-plan-index.md` + `plans/01..04-M*.md`(实施计划:M1 最小闭环/M2 安装闭环/M3 对外面/M4 加固冻结,含各阶段任务拆分/验收条件/测试设计)**。
-- **实现环境事实**:DSH `0.1.0-rc.6`(developer preview,机制可能变动);工作目录 `D:\code\dsh`;Web profile = `web`(3080 在线,boot 图 49 条目);官方源码在 npx 缓存 `node_modules\@deepseek-ai\*`;npm registry = npmmirror;pnpm = `harness-research\.tools\bin\pnpm.cmd`。
+- **实现环境事实**:DSH `0.1.0-rc.6`(developer preview,机制可能变动);工作目录 `<workspace>`;Web profile = `web`(3080 在线,boot 图 49 条目);官方源码在 npx 缓存 `node_modules\@deepseek-ai\*`;npm registry = https://registry.npmjs.org/;pnpm = `<repo-tools>/pnpm` (私链工具,不随仓库提供)。
 - **验证手段**:实机 `http://127.0.0.1:3080/`(boot 图/ping 路由);`dsh --profile web --dump-config`(组合树,需 $DSH_HOME 写权限,沙箱需升级审批)。
 - **未实现项**:M1–M4 全量完成并锁定,契约 v1 已冻结(2026-08-14)。后续均为 **v2 候选**(见 01-contract §10 / ADR-0006 / 00-index §4):REST token/审批钩子、观察窗口数据校准、webServer/tools 动态装配评估、官方 CLI bundles 对拍(发布验证项)、官方内核行为变化跟踪(preview 期)。
 

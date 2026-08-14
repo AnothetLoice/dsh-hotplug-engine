@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { qualityCheck, scanImports, LOADER_PROVIDED } from '../src/host/quality.ts'
@@ -22,7 +22,7 @@ const ENTRY_OK = {
 }
 
 describe('quality: package gate', () => {
-  it('passes the reusable good fixture (hotplug-drill)', () => {
+  it.skipIf(!existsSync(GOOD_FIXTURE))('passes the reusable good fixture (hotplug-drill)', () => {
     const result = qualityCheck(GOOD_FIXTURE)
     expect(result.ok).toBe(true)
     expect(result.issues).toEqual([])

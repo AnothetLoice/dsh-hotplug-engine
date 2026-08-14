@@ -136,7 +136,7 @@ function setup(opts: { hot?: boolean } = {}): {
   return { svc, states, patchPath, dshHome, profileDir }
 }
 
-describe('install: non-bundle local dir (restart engine mode)', () => {
+describe.skipIf(!existsSync(GOOD_FIXTURE))('install: non-bundle local dir (restart engine mode)', () => {
   it('adds the dependency + managed insert row; no observation, restartRequired', async () => {
     const { svc, patchPath, profileDir } = setup()
     const r = await svc.install(GOOD_FIXTURE)
@@ -157,7 +157,7 @@ describe('install: non-bundle local dir (restart engine mode)', () => {
   })
 })
 
-describe('install: hot engine mode observation window', () => {
+describe.skipIf(!existsSync(GOOD_FIXTURE))('install: hot engine mode observation window', () => {
   it('resolves active after the loader picks up the new row', async () => {
     const { svc, states } = setup({ hot: true })
     const p = svc.install(GOOD_FIXTURE)
@@ -185,7 +185,7 @@ describe('install: quality gate + rollback', () => {
   })
 })
 
-describe('install: dryRun', () => {
+describe.skipIf(!existsSync(GOOD_FIXTURE))('install: dryRun', () => {
   it('passes the gate without any writes or pnpm calls', async () => {
     const { svc, patchPath, profileDir } = setup()
     const r = await svc.install(GOOD_FIXTURE, { dryRun: true })
@@ -195,7 +195,7 @@ describe('install: dryRun', () => {
   })
 })
 
-describe('uninstall', () => {
+describe.skipIf(!existsSync(GOOD_FIXTURE))('uninstall', () => {
   it('removes the dependency and cleans the managed insert row', async () => {
     const { svc, patchPath, profileDir } = setup()
     const inst = await svc.install(GOOD_FIXTURE)
@@ -249,7 +249,7 @@ describe('install: bundle packages', () => {
   })
 })
 
-describe('install: observation failure auto-rollback', () => {
+describe.skipIf(!existsSync(GOOD_FIXTURE))('install: observation failure auto-rollback', () => {
   it('times out when the loader never picks up the row and leaves no residue', async () => {
     const { svc, patchPath, profileDir } = setup({ hot: true })
     // loader never gets the new row → timeout → auto-rollback
@@ -412,7 +412,7 @@ describe('startup reconcile', () => {
   })
 })
 
-describe('install: observation stats', () => {
+describe.skipIf(!existsSync(GOOD_FIXTURE))('install: observation stats', () => {
   it('records hit-rate counters for hot-mode observations', async () => {
     const { svc, states } = setup({ hot: true })
     const p = svc.install(GOOD_FIXTURE)
