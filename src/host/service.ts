@@ -9,7 +9,7 @@
  */
 
 import { Service } from '@deepseek-ai/cordis'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   EngineError, ErrorCodes,
@@ -42,7 +42,7 @@ import { AuditLog } from './audit.ts'
 import { qualityCheck } from './quality.ts'
 import { sanitizeTerminal } from './sanitize.ts'
 import {
-  assertSafeSpec, findPnpm, isLocalDirSpec, packageHasBundlePatch,
+  assertSafeSpec, findPnpm, findPnpmCandidates, isLocalDirSpec, packageHasBundlePatch,
   pnpmAdd, pnpmRemove, resolveInstalledName,
 } from './installer.ts'
 
@@ -56,6 +56,10 @@ export interface HotplugEngineServiceOptions {
   phasePollMs?: number
   /** Explicit pnpm executable path (overrides PATH discovery). */
   pnpmPath?: string
+  /** Critical-plugin classification overrides (v0.1.4 direction H): package
+   * names excluded from the critical list, and names force-marked critical. */
+  criticalExempt?: string[]
+  criticalExtra?: string[]
 }
 
 /** Common mutating-op options. `caller` is transport-internal audit
@@ -90,6 +94,8 @@ export class HotplugEngineService extends Service {
   private readonly observationWindowMs: number
   private readonly pollIntervalMs: number
   private readonly pnpmPath: string | undefined
+  private readonly criticalExempt: readonly string[]
+  private readonly criticalExtra: readonly string[]
   private readonly healthStats: ObservationStats = { total: 0, active: 0, failed: 0, timeout: 0, rollback: 0 }
   private readonly operations = new Map<string, OperationInfo>()
   private readonly listeners = new Set<(event: EngineEvent) => void>()
@@ -105,6 +111,8 @@ export class HotplugEngineService extends Service {
     this.observationWindowMs = options.observationWindowMs ?? 8000
     this.pollIntervalMs = options.pollIntervalMs ?? 500
     this.pnpmPath = options.pnpmPath
+    this.criticalExempt = options.criticalExempt ?? []
+    this.criticalExtra = options.criticalExtra ?? []
     const hmr = (ctx as { get?: (name: string) => unknown }).get?.('hmr')
     // T2.0 verified 2026-08-14: cordis-plugin-hmr registers its service as
     // "hmr" (super(ctx, 'hmr')), so this probe is exact.
@@ -149,22 +157,30 @@ export class HotplugEngineService extends Service {
               patchTargetable: isStableRowId(entryId),
               fiberPhase: phaseOf(row.fiber?.state),
               managed,
+              critical: isCriticalPlugin(moduleName, source, this.criticalExempt, this.criticalExtra),
             }
           })
       : // Non-host: file-based projection (patch insert rows; no fiber).
-          readInsertRows(patchContent).map((row): RuntimeEntry => ({
-            entryId: row.id,
-            moduleName: row.name,
-            source: bundles.includes(row.name) ? 'bundle' : row.managed ? 'insert' : 'user',
-            enabled: !(row.disabled ?? false),
-            patchTargetable: true,
-            fiberPhase: null,
-            managed: row.managed,
-          }))
+          readInsertRows(patchContent).map((row): RuntimeEntry => {
+            const source = bundles.includes(row.name) ? 'bundle' : row.managed ? 'insert' : 'user'
+            return {
+              entryId: row.id,
+              moduleName: row.name,
+              source,
+              enabled: !(row.disabled ?? false),
+              patchTargetable: true,
+              fiberPhase: null,
+              managed: row.managed,
+              critical: isCriticalPlugin(row.name, source, this.criticalExempt, this.criticalExtra),
+            }
+          })
     const packages = deps.map(name => ({
       name,
       isBundle: bundles.includes(name),
       version: versionOf(dir, name),
+      // v0.1.4 (direction F): approximate install time from the package.json
+      // mtime (null/undefined when unreadable) — not a precise audit time.
+      installedAt: installedAtOf(dir, name),
     }))
     return {
       profile: name,
@@ -316,11 +332,14 @@ export class HotplugEngineService extends Service {
           handle = createBackup(this.dshHomePath, dir, operationId, 'install', undefined)
           pnpm = findPnpm(this.pnpmPath)
           if (pnpm === undefined) {
-            throw new EngineError(ErrorCodes.INSTALL_FAILED, 'pnpm not found on PATH (install pnpm to manage plugins)')
+            const searched = findPnpmCandidates(this.pnpmPath)
+            throw pnpmError('not-found', searched.length > 0 ? `searched: ${searched.join('; ')}` : 'searched: PATH + common locations (none found)')
           }
           const add = await pnpmAdd(dir, spec, pnpm)
           if (!add.ok) {
-            throw new EngineError(ErrorCodes.INSTALL_FAILED, `pnpm add failed (exit ${add.exitCode}):\n${sanitizeTerminal(add.output)}`)
+            throw add.spawnError === 'ENOENT'
+              ? pnpmError('not-executable', `${pnpm}: ${add.spawnError}`)
+              : pnpmError('add-failed', `exit ${add.exitCode}:\n${sanitizeTerminal(add.output)}`)
           }
           const manifest = readManifest(dir)
           const name = resolveInstalledName(manifest.dependencies ?? {}, spec)
@@ -338,6 +357,12 @@ export class HotplugEngineService extends Service {
           const isBundle = packageHasBundlePatch(pkgDir)
           const clientNote = declaresClient(pkgDir)
             ? '; 客户端 bundle 需刷新页面加载;若该包曾被扫描为"非客户端包",需重启后生效(pkgMeta 负缓存)'
+            : ''
+          // v0.1.4 (direction C): bundle installs land in the bundles layer and
+          // only take effect at the next boot; afterwards enable/disable/upgrade
+          // of that plugin goes through config HMR (no further restart needed).
+          const bundleNote = isBundle
+            ? '; 已写入 bundles 层,重启一次后生效;此后该插件启停/升级走热挂(配置 HMR)'
             : ''
           let effective: { mode: 'hot' | 'restart'; restartRequired: boolean }
           if (isBundle) {
@@ -362,7 +387,7 @@ export class HotplugEngineService extends Service {
                 this.observationWindowMs,
               ))
               if (outcome !== 'active') {
-                throw new EngineError(ErrorCodes.HEALTH_FAILED, `install ${name} observation ${outcome}; auto-rollback`)
+                throw new EngineError(ErrorCodes.HEALTH_FAILED, `install ${name} observation ${outcome}; auto-rollback`, undefined, undefined, 'observe')
               }
               effective = { mode: 'hot', restartRequired: false }
             } else {
@@ -375,7 +400,7 @@ export class HotplugEngineService extends Service {
           const finished = new Date().toISOString()
           const result: MutationResult = {
             ok: true,
-            message: `install ${name} succeeded (${effective.mode})${clientNote}`,
+            message: `install ${name} succeeded (${effective.mode})${bundleNote}${clientNote}`,
             operationId,
             mode: effective.mode,
             restartRequired: effective.restartRequired,
@@ -427,11 +452,14 @@ export class HotplugEngineService extends Service {
           handle = createBackup(this.dshHomePath, dir, operationId, 'uninstall', undefined)
           const pnpm = findPnpm(this.pnpmPath)
           if (pnpm === undefined) {
-            throw new EngineError(ErrorCodes.INSTALL_FAILED, 'pnpm not found on PATH (install pnpm to manage plugins)')
+            const searched = findPnpmCandidates(this.pnpmPath)
+            throw pnpmError('not-found', searched.length > 0 ? `searched: ${searched.join('; ')}` : 'searched: PATH + common locations (none found)')
           }
           const rm = await pnpmRemove(dir, name, pnpm)
           if (!rm.ok) {
-            throw new EngineError(ErrorCodes.INSTALL_FAILED, `pnpm remove failed (exit ${rm.exitCode}):\n${sanitizeTerminal(rm.output)}`)
+            throw rm.spawnError === 'ENOENT'
+              ? pnpmError('not-executable', `${pnpm}: ${rm.spawnError}`)
+              : pnpmError('add-failed', `exit ${rm.exitCode}:\n${sanitizeTerminal(rm.output)}`, 'remove')
           }
           const manifest = readManifest(dir)
           const wasBundle = readBundles(dir).includes(name)
@@ -646,7 +674,7 @@ export class HotplugEngineService extends Service {
       this.observationWindowMs,
     ))
     if (outcome !== 'active') {
-      throw new EngineError(ErrorCodes.HEALTH_FAILED, `enable ${entryId} observation ${outcome}; auto-rollback`)
+      throw new EngineError(ErrorCodes.HEALTH_FAILED, `enable ${entryId} observation ${outcome}; auto-rollback`, undefined, undefined, 'observe')
     }
   }
 
@@ -676,7 +704,7 @@ export class HotplugEngineService extends Service {
       this.observationWindowMs,
     ))
     if (outcome !== 'gone') {
-      throw new EngineError(ErrorCodes.HEALTH_FAILED, `disable ${entryId} observation ${outcome}; auto-rollback`)
+      throw new EngineError(ErrorCodes.HEALTH_FAILED, `disable ${entryId} observation ${outcome}; auto-rollback`, undefined, undefined, 'observe')
     }
   }
 
@@ -941,6 +969,42 @@ function versionOf(dir: string, name: string): string | undefined {
   }
 }
 
+/** Approximate install time for a package: the node_modules/<name>/package.json
+ * mtime (ISO-8601). Undefined when the file is absent/unreadable. v0.1.4 (F). */
+function installedAtOf(dir: string, name: string): string | undefined {
+  try {
+    return statSync(join(dir, 'node_modules', name, 'package.json')).mtime.toISOString()
+  } catch {
+    return undefined
+  }
+}
+
+/** Official core plugins (critical-disable warning, v0.1.4 direction H).
+ * Initial list from docs/03 + in-box bundles; finalize against --dump-config
+ * of the real web profile boot graph (decision point 2). */
+const CORE_PLUGINS: readonly string[] = [
+  '@deepseek-ai/dsh-base',
+  '@deepseek-ai/dsh-web-app',
+  '@deepseek-ai/dsh-headless',
+  '@deepseek-ai/dsh-session',
+  '@deepseek-ai/dsh-agent',
+  '@deepseek-ai/dsh-tools',
+  '@deepseek-ai/dsh-llm',
+  '@deepseek-ai/dsh-user-approval',
+  '@deepseek-ai/dsh-sandbox',
+]
+
+/** Classify a package as critical (official core plugin). Explicit core list is
+ * the primary signal; the @deepseek-ai/ prefix is a default fallback that only
+ * applies to bundle-shaped packages (avoids mislabeling tool packages).
+ * v0.1.4 (direction H). */
+function isCriticalPlugin(moduleName: string, source: RuntimeEntry['source'], exempt: readonly string[], extra: readonly string[]): boolean {
+  if (exempt.includes(moduleName)) return false
+  if (extra.includes(moduleName)) return true
+  if (CORE_PLUGINS.includes(moduleName)) return true
+  return moduleName.startsWith('@deepseek-ai/') && source === 'bundle'
+}
+
 /** Fallback handle reference for audit records when no backup was created. */
 const emptyBackupRef: BackupHandle = {
   operationId: '',
@@ -970,7 +1034,7 @@ function codeOf(error: unknown): string | undefined {
 /** Quality-gate rejection error (issues escaped for UI output, design §4). */
 function gateError(issues: string[]): EngineError {
   const escaped = issues.map(escapeHtml)
-  return new EngineError(ErrorCodes.GATE_REJECTED, `quality gate rejected: ${escaped.join('; ')}`, escaped.join('\n'))
+  return new EngineError(ErrorCodes.GATE_REJECTED, `quality gate rejected: ${escaped.join('; ')}`, escaped.join('\n'), undefined, 'gate')
 }
 
 /** HTML-escape a string for UI/detail output (design §4 security note). */
@@ -993,6 +1057,18 @@ function declaresClient(pkgDir: string): boolean {
   }
 }
 
+/** Build the PNPM_* error for a failed pnpm invocation (dual-code: carries
+ * INSTALL_FAILED as compatCode so old consumers still match). v0.1.4 (D). */
+function pnpmError(kind: 'not-found' | 'not-executable' | 'add-failed', ctx: string, op: 'add' | 'remove' = 'add'): EngineError {
+  if (kind === 'not-found') {
+    return new EngineError(ErrorCodes.PNPM_NOT_FOUND, `pnpm not found (${ctx}; install pnpm or set hotplug-engine.pnpmPath)`, ctx, ErrorCodes.INSTALL_FAILED, 'install')
+  }
+  if (kind === 'not-executable') {
+    return new EngineError(ErrorCodes.PNPM_NOT_EXECUTABLE, `pnpm not executable (${ctx})`, ctx, ErrorCodes.INSTALL_FAILED, 'install')
+  }
+  return new EngineError(ErrorCodes.PNPM_ADD_FAILED, `pnpm ${op} failed (${ctx})`, ctx, ErrorCodes.INSTALL_FAILED, 'install')
+}
+
 function failureResult(error: unknown, operationId?: string, note = ''): MutationResult {
   const message = error instanceof Error ? error.message : String(error)
   const code = codeOf(error)
@@ -1002,6 +1078,18 @@ function failureResult(error: unknown, operationId?: string, note = ''): Mutatio
   // conflict) could not be surfaced to the model.
   const result: MutationResult = { ok: false, message: message + note }
   if (operationId !== undefined) result.operationId = operationId
-  if (code !== undefined) result.errors = [{ code, detail: message }]
+  if (code !== undefined) {
+    const stage = error instanceof EngineError ? error.stage : undefined
+    result.errors = [{ code, detail: message }]
+    if (stage !== undefined) result.errors[0].stage = stage
+    // Dual-code (v0.1.4 direction D): emit the legacy compat code alongside
+    // the new PNPM_* code so old consumers matching INSTALL_FAILED still hit.
+    const compat = error instanceof EngineError ? error.compatCode : undefined
+    if (compat !== undefined && compat !== code) {
+      const compatError: { code: string; detail: string; stage?: 'gate' | 'install' | 'observe' } = { code: compat, detail: message }
+      if (stage !== undefined) compatError.stage = stage
+      result.errors.push(compatError)
+    }
+  }
   return result
 }

@@ -75,6 +75,11 @@ const zh: Record<string, string> = {
   'th.mode': '模式',
   'th.caller': '调用方',
   'th.errorCode': '错误码',
+  'th.installedAt': '安装时间',
+  'search.placeholder': '搜索插件名 / entryId…',
+  'search.allSources': '全部来源',
+  'confirm.disableCritical': '确认停用核心插件 {name}?可能影响稳定性。',
+  'panel.criticalDisabled': '{count} 个核心插件已停用,可能影响稳定性。',
 }
 
 const en: Record<string, string> = {
@@ -121,6 +126,11 @@ const en: Record<string, string> = {
   'th.mode': 'Mode',
   'th.caller': 'Caller',
   'th.errorCode': 'Error Code',
+  'th.installedAt': 'Installed',
+  'search.placeholder': 'Search name / entryId…',
+  'search.allSources': 'All sources',
+  'confirm.disableCritical': 'Disable core plugin {name}? May affect stability.',
+  'panel.criticalDisabled': '{count} core plugins are disabled; stability may be affected.',
 }
 
 const DICTS: Record<Lang, Record<string, string>> = { zh, en }

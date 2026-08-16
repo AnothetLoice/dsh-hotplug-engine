@@ -127,11 +127,11 @@ describe('client: HotplugPanel minimal management UI', () => {
     const buttons = container!.querySelectorAll('.hpe-btn')
     expect(buttons.length).toBe(1)
     expect(text).toContain('随机id不可定位')
-    // Non-Goal guard: NO spec input, NO install UI, no text field at all
-    // (the footer's 安装/卸载 wording is the mechanism hint, not an input).
-    expect(container!.querySelector('input')).toBeNull()
+    // Non-Goal guard: NO spec input, NO install UI. A search input is present
+    // (direction E) but it only filters, never installs.
     expect(container!.querySelector('textarea')).toBeNull()
     expect(container!.querySelector('button.hpe-install')).toBeNull()
+    expect(container!.querySelector('.hpe-searchInput')).not.toBeNull()
   })
 
   it('toggles an entry through the REST surface', async () => {
@@ -203,5 +203,57 @@ describe('client: HotplugPanel minimal management UI', () => {
     expect(tabs).toContain('Audit')
     const button = container!.querySelector('.hpe-btn') as HTMLButtonElement
     expect(button.textContent).toBe('Disable')
+  })
+
+  it('filters entries by search query (direction E)', async () => {
+    const api = new FakeApi() as unknown as HotplugApi
+    await renderPanel(api)
+    expect(container!.querySelectorAll('tbody tr').length).toBe(2)
+    const input = container!.querySelector('.hpe-searchInput') as HTMLInputElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, 'pkg-a')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container!.querySelectorAll('tbody tr').length).toBe(1)
+  })
+
+  it('marks row state color mounted/disabled (direction G)', async () => {
+    const fake = new FakeApi()
+    fake.snap.entries = [
+      { entryId: 'a', moduleName: 'a-mounted', source: 'insert', enabled: true, patchTargetable: true, fiberPhase: 'active', managed: true },
+      { entryId: 'b', moduleName: 'b-disabled', source: 'user', enabled: false, patchTargetable: false, fiberPhase: null, managed: false },
+    ]
+    const api = fake as unknown as HotplugApi
+    await renderPanel(api)
+    const rows = container!.querySelectorAll('tbody tr[data-state]')
+    expect(rows[0].getAttribute('data-state')).toBe('mounted')
+    expect(rows[1].getAttribute('data-state')).toBe('disabled')
+  })
+
+  it('shows critical-disable warning bar and marks critical rows (direction H)', async () => {
+    const fake = new FakeApi()
+    fake.snap.entries = [
+      { entryId: 'core', moduleName: '@deepseek-ai/dsh-session', source: 'bundle', enabled: false, patchTargetable: true, fiberPhase: null, managed: false, critical: true },
+    ]
+    const api = fake as unknown as HotplugApi
+    await renderPanel(api)
+    expect(container!.textContent).toContain('核心插件已停用')
+    expect(container!.querySelector('tbody tr[data-critical=true]')).not.toBeNull()
+  })
+
+  it('confirms before disabling a critical plugin (direction H)', async () => {
+    const fake = new FakeApi()
+    fake.snap.entries = [
+      { entryId: 'core', moduleName: 'core-pkg', source: 'bundle', enabled: true, patchTargetable: true, fiberPhase: 'active', managed: false, critical: true },
+    ]
+    let confirmCalled = false
+    window.confirm = () => { confirmCalled = true; return false }
+    const api = fake as unknown as HotplugApi
+    await renderPanel(api)
+    const button = container!.querySelector('.hpe-btn') as HTMLButtonElement
+    await act(async () => { button.click() })
+    expect(confirmCalled).toBe(true)
+    expect(fake.calls['disable']).toBeUndefined() // cancelled → no disable call
   })
 })

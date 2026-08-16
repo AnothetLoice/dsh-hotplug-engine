@@ -16,7 +16,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 import { EngineError, ErrorCodes } from '../contract/types.ts'
 import { writeManifestAtomic, type ProfileManifest } from './manifest.ts'
@@ -218,7 +218,7 @@ export function rollbackByHandle(dshHomePath: string, handle: BackupHandle): { m
       } catch {
         parsed = {}
       }
-      writeManifestAtomic(handle.manifestPath, parsed)
+      writeManifestAtomic(dirname(handle.manifestPath), parsed)
     }
   }
   return { mode: 'restore' }

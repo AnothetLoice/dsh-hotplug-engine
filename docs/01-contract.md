@@ -46,7 +46,7 @@ interface MutationResult {
   restartRequired?: boolean     // mode==='restart' 时为 true
   installed?: string[]          // install/uninstall 实际安装/移除的包名
   rollbackHandle?: string       // 回滚句柄(备份引用),可传给 rollback()
-  errors?: { code: string; detail: string }[]
+  errors?: { code: string; detail: string; stage?: 'gate' | 'install' | 'observe' }[]  // stage 为 v0.1.4 新增可选字段(失败阶段归类)
 }
 
 /** 运行时条目(官方树投影的一行) */
@@ -58,6 +58,7 @@ interface RuntimeEntry {
   patchTargetable: boolean      // 是否可用稳定 id 做 enable/disable
   fiberPhase: 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
   managed: boolean              // 是否处于引擎 managed block 内
+  critical?: boolean            // 官方核心插件分类(高危停用警告用;v0.1.4 新增,可选字段)
 }
 
 /** 已安装包视图 */
@@ -115,6 +116,7 @@ type EngineEvent =
 > 注 1(来源分类):包在 `dsh.profile.bundles` → `bundle`;在引擎 managed insert block → `insert`;其余 → `user`。
 > 注 2(术语):`entryId` = include-row 稳定 id(enable/disable 的定位目标);install 生成的 insert 行内 `id` 字段称 `rowId`,与其挂载后的 `RuntimeEntry.entryId` 同值——对外契约统一称 `entryId`。loader 随机 8-hex id 不可 patch 定位,`patchTargetable:false`。
 > 注 3(投影):`InstalledPackage` 聚合「npm manifest 依赖 + bundles 层」是**投影视图**(npm deps 不全是插件),不代表独立安装态;引擎不另存安装态真源。
+> 注 4(installedAt 语义,v0.1.4):`InstalledPackage.installedAt` 为**近似安装时间**(ISO-8601),取值 node_modules/<name>/package.json 的 mtime;缺失时为 undefined(可选字段,JSON 序列化省略)。非精确审计时间,仅用于看板排序展示。
 
 ## 4. 方法契约(host 服务 `ctx.hotplugEngine`)
 
@@ -198,7 +200,10 @@ onEvent(listener: (e: EngineEvent) => void): () => void
 | `HOTPLUG.PATCH.UNSAFE_VALUE` | 待写入值(包名等)不过白名单 |
 | `HOTPLUG.GATE.REJECTED` | 质量门拒绝(附 detail:原因清单) |
 | `HOTPLUG.HEALTH.FAILED` | 观察窗口/健康确认失败(激活失败/超时,已自动回滚)——2026-08-14 M1 review 新增,区别于 PATCH.INVALID |
-| `HOTPLUG.INSTALL.FAILED` | 安装命令失败(附 exitCode/output) |
+| `HOTPLUG.PNPM_NOT_FOUND` | pnpm 未找到(PATH/corepack/常见位置均无,附搜索清单与安装指引;v0.1.4 新增) |
+| `HOTPLUG.PNPM_NOT_EXECUTABLE` | pnpm 候选不可执行(shim/权限/ENOENT;v0.1.4 新增) |
+| `HOTPLUG.PNPM_ADD_FAILED` | pnpm add 非零退出(保留退出码;v0.1.4 新增) |
+| `HOTPLUG.INSTALL.FAILED` | 安装命令失败(附 exitCode/output;**保留为兼容码**,以新码为准、仅供兼容识别;v0.1.4 起细分至 PNPM_*) |
 | `HOTPLUG.INSTALL.NOT_FOUND` | 安装后无法解析实际包名 |
 | `HOTPLUG.ROLLBACK.NOT_FOUND` | 回滚句柄不存在/已消费 |
 | `HOTPLUG.ROLLBACK.FAILED` | 回滚执行失败 |

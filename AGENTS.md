@@ -6,7 +6,7 @@ This file provides guidance to agent tools when working with code in this reposi
 
 本仓库是 **dsh-hotplug-engine**(「DSH 热插拔执行引擎」)的项目目录。定位:一个 host 侧服务插件,把「安装→注册→应用→回滚→审计」热插拔执行链做成**任何市场 / agent / 宿主插件都能调用的可靠服务**;自己不拥有目录、不做发现与策展——与市场是"执行层 vs 发现层"的分工,**不是竞争关系**。
 
-- **当前状态(2026-08-14)**:设计/契约/计划已定;**M1–M4 全量实现完成并锁定,契约 v1 已冻结**(01-contract.md 版本 1.0):M1(最小闭环)/M2(安装闭环)/M3(对外面)/M4(加固冻结:审计滞后指示 auditLag、多 profile 文件/restart 语义、引擎自身行 enable/disable 自毁守卫、发布包实机验证);每里程碑双 subagent review(架构 + 一致性)+ 修复后复核,冻结门终审双 review 通过(major M1 已修 + 回归,minor 全部修正/文档化);host/client typecheck 零错误、**166/166 测试全绿**、build 产物正确、发布 tarball 实机 boot 验证通过;真实 web profile 全程未触碰(模板原样、3080 在线)。**后续方向**:v2 候选(token/审批钩子、观察窗口数据校准、动态服务装配评估等,见 01-contract §10 / ADR-0006 / 00-index §4)。设计基线来自**私有工作笔记(未随仓库发布)**,核心依据:
+- **当前状态(2026-08-14)**:设计/契约/计划已定;**M1–M4 全量实现完成并锁定,契约 v1 已冻结**(01-contract.md 版本 1.0):M1(最小闭环)/M2(安装闭环)/M3(对外面)/M4(加固冻结:审计滞后指示 auditLag、多 profile 文件/restart 语义、引擎自身行 enable/disable 自毁守卫、发布包实机验证);每里程碑双 subagent review(架构 + 一致性)+ 修复后复核,冻结门终审双 review 通过(major M1 已修 + 回归,minor 全部修正/文档化);host/client typecheck 零错误、**188/188 测试全绿(M5 安全加固后,基线 166→188)**、build 产物正确、发布 tarball 实机 boot 验证通过;真实 web profile 全程未触碰(模板原样、3080 在线)。**后续方向**:v2 候选(token/审批钩子、观察窗口数据校准、动态服务装配评估等,见 01-contract §10 / ADR-0006 / 00-index §4)。设计基线来自**私有工作笔记(未随仓库发布)**,核心依据:
   - 设计基线 — **上位设计**:服务定位/服务契约 API 草案/消费方集成路径/Non-Goals/可靠性承诺/落地建议;
   - 设计审计笔记 — 机制精确化(含 §1.2 hmr disabled 真相)、社区三家审计、安全面、更安全策略、§7 实测记录、§8 开发方向合理性(红线);
   - 上下文笔记(私有,未随仓库发布) — 机制与上下文;

@@ -19,7 +19,7 @@ export interface MutationResult {
   installed?: string[]
   /** Rollback handle (backup reference) consumable by rollback(). */
   rollbackHandle?: string
-  errors?: { code: string; detail: string }[]
+  errors?: { code: string; detail: string; stage?: 'gate' | 'install' | 'observe' }[]
 }
 
 /** Cordis fiber phase (loader semantics). */
@@ -38,6 +38,9 @@ export interface RuntimeEntry {
   fiberPhase: FiberPhase
   /** Whether the row lives inside an engine-owned managed block. */
   managed: boolean
+  /** Official core-plugin classification for the critical-disable warning
+   * (v0.1.4 additive optional field). */
+  critical?: boolean
 }
 
 /** Installed package view — a projection (npm deps are not all plugins). */
@@ -116,6 +119,9 @@ export const ErrorCodes = {
   PATCH_UNSAFE_VALUE: 'HOTPLUG.PATCH.UNSAFE_VALUE',
   GATE_REJECTED: 'HOTPLUG.GATE.REJECTED',
   HEALTH_FAILED: 'HOTPLUG.HEALTH.FAILED',
+  PNPM_NOT_FOUND: 'HOTPLUG.PNPM_NOT_FOUND',
+  PNPM_NOT_EXECUTABLE: 'HOTPLUG.PNPM_NOT_EXECUTABLE',
+  PNPM_ADD_FAILED: 'HOTPLUG.PNPM_ADD_FAILED',
   INSTALL_FAILED: 'HOTPLUG.INSTALL.FAILED',
   INSTALL_NOT_FOUND: 'HOTPLUG.INSTALL.NOT_FOUND',
   ROLLBACK_NOT_FOUND: 'HOTPLUG.ROLLBACK.NOT_FOUND',
@@ -138,10 +144,17 @@ export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes]
 export class EngineError extends Error {
   readonly code: ErrorCode
   readonly detail?: string
-  constructor(code: ErrorCode, message: string, detail?: string) {
+  /** Legacy compatibility code emitted alongside `code` in errors[] (dual-code
+   * strategy, v0.1.4 — keeps old consumers matching INSTALL_FAILED). */
+  readonly compatCode?: ErrorCode
+  /** Failure-stage classification (v0.1.4 direction D). */
+  readonly stage?: 'gate' | 'install' | 'observe'
+  constructor(code: ErrorCode, message: string, detail?: string, compatCode?: ErrorCode, stage?: 'gate' | 'install' | 'observe') {
     super(message)
     this.name = 'EngineError'
     this.code = code
     this.detail = detail
+    this.compatCode = compatCode
+    this.stage = stage
   }
 }

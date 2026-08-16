@@ -100,7 +100,7 @@ install(spec)
     │     └─ 不通过 → HOTPLUG.GATE.REJECTED(附原因清单),不落盘
     ├─ 2. 变更前备份(backup.ts:patch + package.json 快照)
     ├─ 3. pnpm --dir <profile> add <spec>(直接 spawn,不经 dsh CLI;**参数数组传递,禁 shell 字符串拼接**;Windows 经 cmd.exe /c pnpm.cmd 仍透传数组参数,见 §3.6)
-    │     └─ 失败 → HOTPLUG.INSTALL.FAILED(exitCode/output)
+    │     └─ 失败 → HOTPLUG.PNPM_ADD_FAILED(exitCode/output;`INSTALL_FAILED` 保留为兼容码,v0.1.4 细分,见 §13.4)
     ├─ 4. 解析实际包名(manifest dependencies 与 spec 对账)
     ├─ 5. 质量门复检(装后):目标包 node_modules 实体
     ├─ 6. 写 managed insert 行(rowId = slugify(pkg),见 §3.3)
@@ -153,7 +153,7 @@ disable(entryId) / enable(entryId)
 - `profileDir(name)`:DSH_HOME 解析(`$DSH_HOME` env,缺省 `~/.dsh`)+ `profiles/<name>`;`name` MUST 过白名单正则 `^[A-Za-z0-9._-]+$` 且 ≤120(防路径穿越),不满足 → `HOTPLUG.PROFILE.UNSAFE`;
 - **自身宿主 profile 探测**:`process.argv` 中 `--profile <name>`;无该标志时按 `dsh web|headless` 命令模式判定(参照 web-plugin-manager `isHostProfile` 语义);
 - **M4 多 profile 语义(2026-08-14 T4.2 定案)**:任意白名单名可管理;目录不存在 → `NOT_FOUND`;官方 profile(web/headless)中**非宿主**者 → `PROTECTED`;宿主 profile 恒可管理;不可从宿主 profile 卸载引擎自身(`dsh-hotplug-engine`,PROTECTED),**不可 enable/disable 引擎自身行 `hotplug-engine`**(自毁守卫,M4 冻结终审 M1);**非宿主 profile = 文件/restart 语义**:变更只写目标 profile 的 patch/manifest 等文件,`mode:'restart'` + `restartRequired:true`(目标下次启动生效),**不经过宿主 loader 观察窗口**(其行不在本进程 loader 中);非宿主 snapshot 为文件级投影(patch insert 行,`fiberPhase:null`,`mode:'restart'`);非宿主 enable/disable 的目标存在性以**目标 patch 文件**为准;非宿主 uninstall 同样走 pnpm + 文件语义(M4 冻结终审 M6 记录);宿主 profile 保持 loader 投影 + 观察窗口语义不变;**自保护以宿主 profile 为界**(跨 profile uninstall 引擎使目标 fail-loud 属操作者责任,引擎不额外拦截,v1 语义不扩大);
-- **pnpm 探测**:显式配置 `hotplugEngine.pnpmPath` 优先,其次依次检查 `pnpm` / `pnpm.cmd` / `pnpm.exe`(PATH);缺失 → 启动告警,install/uninstall 返回明确错误(`HOTPLUG.INSTALL.FAILED` + 提示);
+- **pnpm 探测(v0.1.4 起扩展,详见 §13.1)**:显式配置 `hotplugEngine.pnpmPath` 优先,其次 corepack pnpm → PATH(按 `path.delimiter` 分隔)→ 常见安装位置;缺失 → 返回 `HOTPLUG.PNPM_NOT_FOUND`(附搜索清单与安装指引;`INSTALL_FAILED` 保留为兼容码);
 - **Windows spawn 策略**:spawn 一律用**参数数组**(`['add', '--dir', profile, spec]`),禁 shell 字符串拼接;Windows 上经 `cmd.exe /c pnpm.cmd <数组参数>`,保留注入防护(`--script`/`;` 等无法经数组参数注入)。
 
 ## 4. 质量门(quality.ts,装前静态检查)
@@ -284,3 +284,38 @@ disable(entryId) / enable(entryId)
 ---
 
 *实现按 M1→M4 推进;每阶段过 typecheck + 测试,写操作在演练 profile 实机验证后回填设计审计笔记(私有,未随仓库发布)实测记录。*
+
+## 13. v0.1.4 优化方向实现设计(A–H,M6)
+
+> 方向文档 docs/03-optimization-directions.md(权威);本节给实现蓝图,计划见 plans/06-M6-optimization.md。全部为 v1 向后兼容增量。
+
+### 13.1 pnpm 定位与可配置化(A)
+- 插件入口声明 Config schema(schemastery),apply(ctx, config) 读 config.pnpmPath 传入 HotplugEngineServiceOptions.pnpmPath;
+- findPnpm 探测序列:显式 pnpmPath → corepack pnpm → PATH 常规搜索 → 常见安装位置(全局 npm bin / corepack shims / LOCALAPPDATA\pnpm);
+- 返回归一:含 path、candidates[]、note;未命中 detail 携带候选清单 + 安装指引;错误码 PNPM_NOT_FOUND(契约 §8 新增)。
+
+### 13.2 Windows 可执行性健壮性(B)
+- findPnpm win32 分支按 PATHEXT 语义排序:.exe/.com → .cmd/.bat → 无扩展名垫底;
+- verifyPnpmExecutable(path) 预检(存在 + 扩展名规则 + 权限),失败归 PNPM_NOT_EXECUTABLE;
+- runPnpm spawn error 分类:ENOENT → PNPM_NOT_EXECUTABLE(detail 含路径与原因),其余保留原始信息。
+
+### 13.3 bundle 热加载编排(C,编排层)
+- install bundle 分支 message 增加"重启一次后生效,此后启停/升级走热挂"引导;
+- 重启后对账复用 startupReconcile;客户端刷新提示已含 clientNote,补强 message 措辞;
+- 动态服务装配评估为 v2 评估项,产出独立评估文档,不改契约(不实现自定义热应用/图重组/loader)。
+
+### 13.4 错误模型细分(D)
+- ErrorCodes 新增 PNPM_NOT_FOUND / PNPM_NOT_EXECUTABLE / PNPM_ADD_FAILED(INSTALL_FAILED 保留为兼容码);
+- **双码共发兼容**:三类 pnpm 失败的 errors[] 同时携带新细分码与旧 INSTALL_FAILED 码,旧消费方按 INSTALL_FAILED 仍命中、新消费方按 PNPM_* 得细分;以新码为准、INSTALL_FAILED 仅供兼容识别;
+- detail 经 sanitizeTerminal 清洗后携带可操作建议;
+- MutationResult.errors[] 附加 stage 字段('gate' | 'install' | 'observe'),可选向后兼容。
+
+### 13.5 看板搜索/排序/色彩/警告(E–H)
+- E 搜索:panels.tsx 顶部搜索框,纯 client 过滤(entryId/moduleName/source),大小写不敏感,空态明确;
+- F 排序 + installedAt:host snapshot 填 installedAt(package.json mtime,缺失 null),client 四维两向稳定排序(表头点击);
+- G 色彩:行级 data-state 驱动(enabled+fiberPhase 综合判定),语义变量(不硬编码 hex),色弱保留 ●/○ 文字;
+- H 高危停用:host snapshot 填 critical(内置核心清单 + 前缀规则 @deepseek-ai/ 且非可选 + config 覆盖),client 警告行色 + 停用二次确认 + 聚合警告条。
+
+### 13.6 核心清单(H,待定稿)
+- 内置核心清单初始成员以 --dump-config 实测 web profile boot 图为准(03 文档举例):@deepseek-ai/dsh-session、dsh-agent、dsh-tools、dsh-web、dsh-llm、dsh-sandbox、dsh-approval 等;
+- 判定谓词:内置核心清单显式列名为主判据;前缀规则 @deepseek-ai/ 仅作默认兜底、且仅对**声明 dsh.bundle.patch 的包**生效(避免把大量 @deepseek-ai/ 工具包误标 critical),其余需 config 显式追加;config 可豁免/追加;核心清单为可覆盖常量,随内核升级对账;仅提示不禁止。

@@ -10,6 +10,8 @@
 | `AGENTS.md` | 项目守则 | 红线/原则/推进流程/经验沉淀/防线(供 agent 工具) |
 | `01-contract.md` | **契约(权威)** | 服务身份、类型定义、方法/REST/工具/事件契约、错误模型、降级模式、版本化 |
 | `02-design.md` | 详细设计 | 模块布局、写入层规范、安装/回滚流程、质量门、观察窗口、审计、并发、构建、测试、M1-M4 实施顺序 |
+| `03-optimization-directions.md` | **优化方向(非契约/非计划)** | 引擎基础 A–D(pnpm 定位/Windows 可执行性/bundle 热加载编排/错误诊断)+ 看板 UI E–H(搜索/排序/状态色彩/高危停用警告);验收标准与计划制定指引;实施计划见 `plans/06-M6-optimization.md`(v0.1.4) |
+| `04-dynamic-assembly-eval.md` | 评估文档(v2 候选) | 动态服务装配评估:纯客户端 bundle 免重启可行性,结论"不升 v2"(v0.1.4 方向 C) |
 | `adr/ADR-0001-package-shape.md` | 决策记录 | 包形态与挂载(bundle 双面) |
 | `adr/ADR-0002-service-identity.md` | 决策记录 | 服务身份与契约版本化(ctx.hotplugEngine, v1 只增不改) |
 | `adr/ADR-0003-operation-model.md` | 决策记录 | 操作模型(串行队列 + 观察窗口自动回滚 + 按块回滚 + 启动对账) |

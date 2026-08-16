@@ -488,3 +488,57 @@ describe('service: entry-phase events (contract §7)', () => {
     expect(entry).toBeUndefined()
   })
 })
+
+describe('snapshot: critical + installedAt (v0.1.4)', () => {
+  it('classifies core plugins critical and honors exempt/extra overrides', () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'hpe-crit-'))
+    const profileDir = join(dshHome, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), '', 'utf8')
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true, dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-session', '@deepseek-ai/dsh-client-extra'] } },
+    }), 'utf8')
+    const loader: LoaderLike = {
+      entries: () => [{
+        id: 'include',
+        subtree: {
+          entries: () => [
+            { options: { id: 'core', name: '@deepseek-ai/dsh-session', group: false }, get disabled() { return false }, get fiber() { return { state: 2 } } },
+            { options: { id: 'tool', name: '@deepseek-ai/dsh-client-extra', group: false }, get disabled() { return false }, get fiber() { return { state: 2 } } },
+          ],
+        },
+      }],
+    }
+    const ctx = new Context()
+    ctx.provide('loader', loader)
+    const svc = new HotplugEngineService(ctx, {
+      dshHomePath: dshHome, hostProfile: 'web',
+      criticalExempt: ['@deepseek-ai/dsh-client-extra'],
+    })
+    const snap = svc.snapshot()
+    const byName = new Map(snap.entries.map(e => [e.moduleName, e]))
+    // CORE_PLUGINS 命中 → critical true
+    expect(byName.get('@deepseek-ai/dsh-session')?.critical).toBe(true)
+    // @deepseek-ai/ 前缀 + bundle 命中兜底,但被 exempt → false
+    expect(byName.get('@deepseek-ai/dsh-client-extra')?.critical).toBe(false)
+  })
+
+  it('fills installedAt from package.json mtime (undefined when missing)', () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'hpe-at-'))
+    const profileDir = join(dshHome, 'profiles', 'web')
+    mkdirSync(join(profileDir, 'node_modules', 'withpkg'), { recursive: true })
+    writeFileSync(join(profileDir, 'node_modules', 'withpkg', 'package.json'), JSON.stringify({ name: 'withpkg', version: '1.0.0' }))
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), '', 'utf8')
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true, dependencies: { withpkg: '1.0.0', nopkg: '1.0.0' },
+    }), 'utf8')
+    const ctx = new Context()
+    ctx.provide('loader', makeLoader(new Map()))
+    const svc = new HotplugEngineService(ctx, { dshHomePath: dshHome, hostProfile: 'web' })
+    const snap = svc.snapshot()
+    const byName = new Map(snap.packages.map(p => [p.name, p]))
+    expect(byName.get('withpkg')?.installedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(byName.get('nopkg')?.installedAt).toBeUndefined()
+  })
+})

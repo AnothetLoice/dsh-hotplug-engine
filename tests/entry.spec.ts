@@ -48,6 +48,15 @@ describe('entry: apply() surface registration', () => {
     const ctx = makeCtx()
     expect(() => apply(ctx)).not.toThrow()
   })
+
+  it('passes config.pnpmPath into the service (v0.1.4 Config schema)', () => {
+    isolateDshHome()
+    const ctx = makeCtx()
+    expect(() => apply(ctx, { pnpmPath: 'C:/fake/pnpm.cmd' })).not.toThrow()
+    const svc = (ctx as unknown as { get: (name: string) => unknown }).get('hotplugEngine')
+    expect(svc).toBeTruthy()
+    expect(() => (svc as { snapshot: () => unknown }).snapshot()).not.toThrow()
+  })
 })
 
 describe('entry: cordis service probing semantics (A3.6 root cause regression)', () => {

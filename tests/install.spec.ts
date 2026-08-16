@@ -183,6 +183,21 @@ describe('install: quality gate + rollback', () => {
     // patch untouched
     expect(readFileSync(patchPath, 'utf8')).toBe(before)
   })
+
+  it('rollback after a successful install restores manifest deps + insert row (v0.1.4 bug fix)', async () => {
+    const { svc, patchPath, profileDir } = setup()
+    const fixture = mkdtempSync(join(tmpdir(), 'hpe-goodfixture-'))
+    mkdirSync(join(fixture, 'lib'), { recursive: true })
+    writeFileSync(join(fixture, 'package.json'), JSON.stringify({ name: 'good-fixture', version: '1.0.0', main: './lib/index.js' }), 'utf8')
+    writeFileSync(join(fixture, 'lib/index.js'), 'export function apply() {}\n', 'utf8')
+    const inst = await svc.install(fixture)
+    expect(inst.ok).toBe(true)
+    expect(readDependencies(profileDir)).toContain('good-fixture')
+    const rb = await svc.rollback(inst.rollbackHandle!)
+    expect(rb.ok).toBe(true)
+    expect(readDependencies(profileDir)).not.toContain('good-fixture')
+    expect(readInsertRows(readFileSync(patchPath, 'utf8')).some(row => row.name === 'good-fixture')).toBe(false)
+  })
 })
 
 describe.skipIf(!existsSync(GOOD_FIXTURE))('install: dryRun', () => {
@@ -264,7 +279,7 @@ describe.skipIf(!existsSync(GOOD_FIXTURE))('install: observation failure auto-ro
 })
 
 describe('install: pnpm failures', () => {
-  it('maps a failing pnpm to INSTALL_FAILED', async () => {
+  it('maps a failing pnpm add to PNPM_ADD_FAILED + INSTALL_FAILED (dual-code)', async () => {
     const dshHome = mkdtempSync(join(tmpdir(), 'hpe-fail-'))
     const profileDir = join(dshHome, 'profiles', 'web')
     mkdirSync(profileDir, { recursive: true })
@@ -281,7 +296,9 @@ describe('install: pnpm failures', () => {
     })
     const r = await svc.install('some-npm-pkg')
     expect(r.ok).toBe(false)
-    expect(r.errors?.[0]?.code).toBe(ErrorCodes.INSTALL_FAILED)
+    expect(r.errors?.[0]?.code).toBe(ErrorCodes.PNPM_ADD_FAILED)
+    expect(r.errors?.some(e => e.code === ErrorCodes.INSTALL_FAILED)).toBe(true)
+    expect(r.errors?.[0]?.stage).toBe('install')
   })
 
   // M5 M2: pnpm failure output with ANSI ESC / control chars must be
@@ -310,7 +327,9 @@ describe('install: pnpm failures', () => {
     })
     const r = await svc.install('some-npm-pkg')
     expect(r.ok).toBe(false)
-    expect(r.errors?.[0]?.code).toBe(ErrorCodes.INSTALL_FAILED)
+    expect(r.errors?.[0]?.code).toBe(ErrorCodes.PNPM_ADD_FAILED)
+    expect(r.errors?.some(e => e.code === ErrorCodes.INSTALL_FAILED)).toBe(true)
+    expect(r.errors?.[0]?.stage).toBe('install')
     const message = r.message
     // The ESC byte itself (0x1B) and BEL (0x07) are stripped — the terminal
     // injection primitive is gone; leftover '[31m' without ESC is inert text.
@@ -327,6 +346,57 @@ describe('install: pnpm failures', () => {
       const code = ch.charCodeAt(0)
       expect(code >= 0x20 && code < 0x7f || code >= 0x80, JSON.stringify(code)).toBe(true)
     }
+  })
+
+  it('maps spawn ENOENT to PNPM_NOT_EXECUTABLE (dual-code with INSTALL_FAILED)', async () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'hpe-spawn-'))
+    const profileDir = join(dshHome, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), EMPTY_TEMPLATE, 'utf8')
+    writeManifestAtomic(profileDir, { name: 'dsh-profile-web', private: true, dependencies: {} })
+    const ctx = new Context()
+    ctx.provide('loader', makeLoader(new Map<string, RowState>()))
+    // extension-less + nonexistent → direct spawn → ENOENT (cross-platform)
+    const missing = join(dshHome, 'no-such-pnpm')
+    const svc = new HotplugEngineService(ctx, { dshHomePath: dshHome, hostProfile: 'web', observationWindowMs: 500, pollIntervalMs: 40, pnpmPath: missing })
+    const r = await svc.install('some-npm-pkg')
+    expect(r.ok).toBe(false)
+    expect(r.errors?.[0]?.code).toBe(ErrorCodes.PNPM_NOT_EXECUTABLE)
+    expect(r.errors?.some(e => e.code === ErrorCodes.INSTALL_FAILED)).toBe(true)
+  })
+
+  it('maps pnpm-not-found to PNPM_NOT_FOUND (dual-code with INSTALL_FAILED)', async () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'hpe-notfound-'))
+    const profileDir = join(dshHome, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), EMPTY_TEMPLATE, 'utf8')
+    writeManifestAtomic(profileDir, { name: 'dsh-profile-web', private: true, dependencies: {} })
+    const ctx = new Context()
+    ctx.provide('loader', makeLoader(new Map<string, RowState>()))
+    // explicit path with a cmd metacharacter → rejected by the guard → findPnpm undefined
+    const svc = new HotplugEngineService(ctx, { dshHomePath: dshHome, hostProfile: 'web', observationWindowMs: 500, pollIntervalMs: 40, pnpmPath: 'C:/a&b/pnpm.cmd' })
+    const r = await svc.install('some-npm-pkg')
+    expect(r.ok).toBe(false)
+    expect(r.errors?.[0]?.code).toBe(ErrorCodes.PNPM_NOT_FOUND)
+    expect(r.errors?.some(e => e.code === ErrorCodes.INSTALL_FAILED)).toBe(true)
+  })
+
+  it('maps uninstall pnpm remove failure to PNPM_ADD_FAILED (dual-code)', async () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'hpe-unrm-'))
+    const profileDir = join(dshHome, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), EMPTY_TEMPLATE, 'utf8')
+    writeManifestAtomic(profileDir, { name: 'dsh-profile-web', private: true, dependencies: { 'some-pkg': '1.0.0' } })
+    const ctx = new Context()
+    ctx.provide('loader', makeLoader(new Map<string, RowState>()))
+    const root = mkdtempSync(join(tmpdir(), 'hpe-badpnpm-'))
+    const badCmd = join(root, 'bad-pnpm.cmd')
+    writeFileSync(badCmd, '@echo off\r\necho boom 1>&2\r\nexit /b 1\r\n', 'utf8')
+    const svc = new HotplugEngineService(ctx, { dshHomePath: dshHome, hostProfile: 'web', pnpmPath: badCmd })
+    const r = await svc.uninstall('some-pkg')
+    expect(r.ok).toBe(false)
+    expect(r.errors?.[0]?.code).toBe(ErrorCodes.PNPM_ADD_FAILED)
+    expect(r.errors?.some(e => e.code === ErrorCodes.INSTALL_FAILED)).toBe(true)
   })
 })
 

@@ -72,6 +72,19 @@ html[data-dsh-hotplug-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard
 .hpe-busy{flex:none;color:var(--dsw-alias-state-warn-primary);font-size:12px}
 .hpe-footer{flex:none;color:var(--dsw-alias-label-tertiary);border-top:1px solid var(--dsw-alias-separator-primary);padding-top:6px;font-size:11px}
 .hpe-entry:focus-visible,.hpe-close:focus-visible,.hpe-tab:focus-visible,.hpe-btn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+/* v0.1.4 direction E: search + source filter */
+.hpe-search{flex:none;display:flex;gap:8px}
+.hpe-searchInput{flex:1;min-width:0;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:5px 10px;font-size:12.5px}
+.hpe-searchSelect{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:5px 8px;font-size:12.5px}
+/* v0.1.4 direction F: sortable header */
+.hpe-sortable{cursor:pointer;user-select:none}
+.hpe-sortable:hover{color:var(--dsw-alias-label-primary)}
+/* v0.1.4 direction G: row state color (mounted green / disabled red / failed warn) */
+.hpe-table tbody tr[data-state=mounted]{background:var(--dsw-alias-state-success-secondary)}
+.hpe-table tbody tr[data-state=disabled]{background:var(--dsw-alias-state-error-secondary)}
+.hpe-table tbody tr[data-state=failed]{background:var(--dsw-alias-state-warn-secondary)}
+/* v0.1.4 direction H: stronger edge for critical+disabled rows */
+.hpe-table tbody tr[data-critical=true][data-state=disabled]{box-shadow:inset 3px 0 0 var(--dsw-alias-state-error-primary)}
 `
 
 /** Inject the panel stylesheet once (idempotent). */

@@ -9,6 +9,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { HotplugEngineService } from './host/service.ts'
 import { makeRoutes } from './host/rest.ts'
 import type { EventStream } from './host/events.ts'
@@ -16,6 +17,12 @@ import { makePreExecuteGate, makeTools } from './host/tools.ts'
 
 /** Cordis plugin name (also the bundle row id). */
 export const name = 'hotplug-engine'
+
+/** Plugin config schema (v0.1.4): explicit pnpm executable path overrides
+ * PATH discovery (additive; absent → PATH search, unchanged v1 behavior). */
+export const Config = Schema.object({
+  pnpmPath: Schema.string(),
+})
 
 /** Required services (the loader is the only hard dependency; the REST and
  * tool surfaces mount opportunistically). */
@@ -25,8 +32,8 @@ export const inject = ['loader']
  * Mount the engine service + M3 external surfaces.
  * @param ctx - plugin context with `loader` injected.
  */
-export function apply(ctx: Context): void {
-  const service = new HotplugEngineService(ctx)
+export function apply(ctx: Context, config: { pnpmPath?: string }): void {
+  const service = new HotplugEngineService(ctx, { pnpmPath: config?.pnpmPath })
 
   // REST + SSE (contract §5/§7): registered only when a webServer exists.
   // NOTE: cordis service properties THROW when not declared in inject, so
