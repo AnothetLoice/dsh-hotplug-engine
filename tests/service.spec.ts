@@ -101,20 +101,32 @@ function setup(): { svc: HotplugEngineService; states: Map<string, RowState>; pa
 }
 
 describe('service: mode and snapshot', () => {
-  it('runs in restart mode without an hmr service (contract §9.1)', () => {
+  it('starts in restart mode (empirical detection initial state, contract §9.1)', () => {
     const { svc } = setup()
     expect(svc.mode).toBe('restart')
   })
 
-  it('reports restartRequired in restart mode (contract §9.2 two-axis)', async () => {
+  it('flips engine mode to hot after a reflected operation (lazy update)', async () => {
     const { svc, states } = setup()
     const p = svc.disable('row-a')
     await sleep(150)
-    states.set('row-a', { disabled: true, phase: null })
+    states.set('row-a', { disabled: true, phase: null }) // reflected (gone)
+    const r = await p
+    expect(r.ok).toBe(true)
+    expect(r.mode).toBe('hot')
+    expect(svc.mode).toBe('hot')
+  })
+
+  it('keeps the write + reports restart + warning when a disable is not reflected (contract §9.2)', async () => {
+    const { svc } = setup()
+    const p = svc.disable('row-a')
+    await sleep(150)
+    // loader keeps the row active → 'still-active' → unreflected
     const r = await p
     expect(r.ok).toBe(true)
     expect(r.mode).toBe('restart')
     expect(r.restartRequired).toBe(true)
+    expect(r.message).toContain('未在 loader 生效')
   })
 
   it('snapshot projects the official tree with source classification', () => {
@@ -236,7 +248,7 @@ describe('service: enable/disable user rows', () => {
     expect(r.ok).toBe(true)
     expect(r.operationId).toBeTruthy()
     expect(r.rollbackHandle).toBe(r.operationId)
-    expect(r.mode).toBe('restart')
+    expect(r.mode).toBe('hot')
     const patch = readFileSync(patchPath, 'utf8')
     expect(patch).toContain('- id: row-a')
     expect(patch).toContain('disabled: true')
@@ -328,6 +340,22 @@ describe('service: serial queue conflict', () => {
 })
 
 describe('service: rollback', () => {
+  it('does not flip engine mode (stabilization is not reflection)', async () => {
+    const { svc } = setup()
+    // an unreflected disable keeps mode 'restart'
+    const d = svc.disable('row-a')
+    await sleep(150)
+    const dr = await d // still-active → restart, mode stays 'restart'
+    expect(dr.ok).toBe(true)
+    expect(svc.mode).toBe('restart')
+    // rollback waits for stabilization (waitForStable), never flips to hot
+    const rb = svc.rollback(dr.rollbackHandle!)
+    await sleep(150)
+    const rr = await rb
+    expect(rr.ok).toBe(true)
+    expect(svc.mode).toBe('restart')
+  })
+
   it('rollback restores the patch to its pre-operation state', async () => {
     const { svc, states, patchPath } = setup()
     const before = readFileSync(patchPath, 'utf8')

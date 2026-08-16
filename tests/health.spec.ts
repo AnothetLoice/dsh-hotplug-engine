@@ -68,9 +68,20 @@ describe('health: observation windows', () => {
     expect(await failed).toBe('failed')
   })
 
-  it('waitForActive times out conservatively', async () => {
+  it('waitForActive returns stuck when a live phase stalls', async () => {
     const outcome = await waitForActive(() => 'loading', 10, 120)
-    expect(outcome).toBe('timeout')
+    expect(outcome).toBe('stuck')
+  })
+
+  it('waitForActive returns absent when the row never leaves the baseline', async () => {
+    expect(await waitForActive(() => undefined, 10, 120)).toBe('absent') // install: not in tree
+    expect(await waitForActive(() => null, 10, 120)).toBe('absent')     // enable: still disabled
+  })
+
+  it('waitForHealthWithBlock distinguishes absent from stuck', async () => {
+    expect(await waitForHealthWithBlock(() => undefined, () => [], 10, 120)).toBe('absent')
+    expect(await waitForHealthWithBlock(() => null, () => [], 10, 120)).toBe('absent')
+    expect(await waitForHealthWithBlock(() => 'loading', () => [], 10, 120)).toBe('stuck')
   })
 
   it('waitForGone resolves when the row unmounts (disabled)', async () => {
@@ -78,6 +89,16 @@ describe('health: observation windows', () => {
     const promise = waitForGone(() => phase, 20, 1000)
     setTimeout(() => { phase = null }, 60)
     expect(await promise).toBe('gone')
+  })
+
+  it('waitForGone returns still-active when the row never leaves active', async () => {
+    const outcome = await waitForGone(() => 'active', 10, 120)
+    expect(outcome).toBe('still-active')
+  })
+
+  it('waitForGone returns stuck when the row leaves active but stalls', async () => {
+    const outcome = await waitForGone(() => 'loading', 10, 120)
+    expect(outcome).toBe('stuck')
   })
 
   it('waitForStable accepts active or gone and rejects failed', async () => {

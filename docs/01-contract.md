@@ -104,6 +104,7 @@ interface AuditRecord {
   patchBeforeHash?: string      // 变更前 patch 文件 sha1(短 12)
   patchAfterHash?: string
   backupPath?: string           // 变更前备份引用
+  note?: string                 // v0.1.5(P2-2):自由文本警示(如「未在 loader 生效」告警)
 }
 
 /** 事件帧(SSE data 行,JSON) */

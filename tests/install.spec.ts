@@ -106,7 +106,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function setup(opts: { hot?: boolean } = {}): {
+function setup(): {
   svc: HotplugEngineService; states: Map<string, RowState>; patchPath: string; dshHome: string; profileDir: string
 } {
   const dshHome = mkdtempSync(join(tmpdir(), 'hpe-inst-'))
@@ -124,7 +124,8 @@ function setup(opts: { hot?: boolean } = {}): {
   const states = new Map<string, RowState>([['row-a', { disabled: false, phase: 'active' }]])
   const ctx = new Context()
   ctx.provide('loader', makeLoader(states))
-  if (opts.hot) ctx.provide('hmr', {})
+  // v0.1.5: no ctx.provide('hmr') — mode is detected empirically from the
+  // loader reflection during the observation window (P2-2 fix).
   const fake = makeFakePnpm()
   const svc = new HotplugEngineService(ctx, {
     dshHomePath: dshHome,
@@ -136,13 +137,14 @@ function setup(opts: { hot?: boolean } = {}): {
   return { svc, states, patchPath, dshHome, profileDir }
 }
 
-describe.skipIf(!existsSync(GOOD_FIXTURE))('install: non-bundle local dir (restart engine mode)', () => {
-  it('adds the dependency + managed insert row; no observation, restartRequired', async () => {
+describe.skipIf(!existsSync(GOOD_FIXTURE))('install: non-bundle local dir (unreflected → restart)', () => {
+  it('adds the dependency + managed insert row; unreflected → restart + warning', async () => {
     const { svc, patchPath, profileDir } = setup()
     const r = await svc.install(GOOD_FIXTURE)
     expect(r.ok).toBe(true)
     expect(r.mode).toBe('restart')
     expect(r.restartRequired).toBe(true)
+    expect(r.message).toContain('未在 loader 生效')
     expect(r.installed).toEqual(['@dsh-drill/hotplug-drill'])
     expect(r.rollbackHandle).toBeTruthy()
     // dependency added
@@ -159,7 +161,7 @@ describe.skipIf(!existsSync(GOOD_FIXTURE))('install: non-bundle local dir (resta
 
 describe.skipIf(!existsSync(GOOD_FIXTURE))('install: hot engine mode observation window', () => {
   it('resolves active after the loader picks up the new row', async () => {
-    const { svc, states } = setup({ hot: true })
+    const { svc, states } = setup()
     const p = svc.install(GOOD_FIXTURE)
     await sleep(200)
     states.set('dsh-drill-hotplug-drill', { disabled: false, phase: 'active' })
@@ -265,10 +267,13 @@ describe('install: bundle packages', () => {
 })
 
 describe.skipIf(!existsSync(GOOD_FIXTURE))('install: observation failure auto-rollback', () => {
-  it('times out when the loader never picks up the row and leaves no residue', async () => {
-    const { svc, patchPath, profileDir } = setup({ hot: true })
-    // loader never gets the new row → timeout → auto-rollback
-    const r = await svc.install(GOOD_FIXTURE)
+  it('rolls back when the row appears but stalls (stuck)', async () => {
+    const { svc, states, patchPath, profileDir } = setup()
+    const p = svc.install(GOOD_FIXTURE)
+    await sleep(200)
+    // row appears but never reaches active → 'stuck' → auto-rollback
+    states.set('dsh-drill-hotplug-drill', { disabled: false, phase: 'loading' })
+    const r = await p
     expect(r.ok).toBe(false)
     expect(r.errors?.[0]?.code).toBe(ErrorCodes.HEALTH_FAILED)
     // dependency removed (observation failure cleans node_modules too)
@@ -483,8 +488,8 @@ describe('startup reconcile', () => {
 })
 
 describe.skipIf(!existsSync(GOOD_FIXTURE))('install: observation stats', () => {
-  it('records hit-rate counters for hot-mode observations', async () => {
-    const { svc, states } = setup({ hot: true })
+  it('records hit-rate counters for observations', async () => {
+    const { svc, states } = setup()
     const p = svc.install(GOOD_FIXTURE)
     await sleep(200)
     states.set('dsh-drill-hotplug-drill', { disabled: false, phase: 'active' })

@@ -65,8 +65,10 @@ export function rowExists(loader: LoaderLike, entryId: string): boolean {
   return includeRows(loader).some(row => row.options?.id === entryId)
 }
 
-/** Observation result of a health poll. */
-export type HealthOutcome = 'active' | 'failed' | 'timeout'
+/** Observation result of an install/enable health poll (v0.1.5 three-way). */
+export type ActiveOutcome = 'active' | 'failed' | 'stuck' | 'absent'
+/** Observation result of a disable health poll (v0.1.5 three-way). */
+export type GoneOutcome = 'gone' | 'failed' | 'still-active' | 'stuck'
 
 /**
  * Poll a target row until it reaches a settled outcome.
@@ -78,51 +80,60 @@ export async function waitForHealth(
   readPhase: () => FiberPhase | undefined,
   intervalMs = 500,
   timeoutMs = 8000,
-): Promise<HealthOutcome> {
+): Promise<ActiveOutcome> {
   const deadline = Date.now() + timeoutMs
+  let sawLive = false
   for (;;) {
     const phase = readPhase()
     if (phase === 'active') return 'active'
     if (phase === 'failed') return 'failed'
-    if (Date.now() >= deadline) return 'timeout'
+    if (phase !== undefined && phase !== null) sawLive = true
+    if (Date.now() >= deadline) return sawLive ? 'stuck' : 'absent'
     await sleep(intervalMs)
   }
 }
 
 /**
  * Poll until the target row is ACTIVE (enable confirmation). 'failed' beats
- * timeout; timeout is conservative (caller rolls back).
+ * timeout. Outcome distinguishes 'stuck' (entered a live phase then stalled)
+ * from 'absent' (never left the null/undefined baseline — no reflection).
  */
 export async function waitForActive(
   readPhase: () => FiberPhase | undefined,
   intervalMs = 500,
   timeoutMs = 8000,
-): Promise<'active' | 'failed' | 'timeout'> {
+): Promise<ActiveOutcome> {
   const deadline = Date.now() + timeoutMs
+  let sawLive = false
   for (;;) {
     const phase = readPhase()
     if (phase === 'active') return 'active'
     if (phase === 'failed') return 'failed'
-    if (Date.now() >= deadline) return 'timeout'
+    if (phase !== undefined && phase !== null) sawLive = true
+    if (Date.now() >= deadline) return sawLive ? 'stuck' : 'absent'
     await sleep(intervalMs)
   }
 }
 
 /**
  * Poll until the target row is GONE (disabled confirmation: a disabled row
- * has no fiber → phase null/undefined). 'failed' beats timeout.
+ * has no fiber → phase null/undefined). 'failed' beats timeout. Outcome
+ * distinguishes 'still-active' (never left active — no reflection) from
+ * 'stuck' (left active but stalled before gone/failed).
  */
 export async function waitForGone(
   readPhase: () => FiberPhase | undefined,
   intervalMs = 500,
   timeoutMs = 8000,
-): Promise<'gone' | 'failed' | 'timeout'> {
+): Promise<GoneOutcome> {
   const deadline = Date.now() + timeoutMs
+  let everLeftActive = false
   for (;;) {
     const phase = readPhase()
     if (phase === undefined || phase === null) return 'gone'
     if (phase === 'failed') return 'failed'
-    if (Date.now() >= deadline) return 'timeout'
+    if (phase !== 'active') everLeftActive = true
+    if (Date.now() >= deadline) return everLeftActive ? 'stuck' : 'still-active'
     await sleep(intervalMs)
   }
 }
@@ -147,7 +158,7 @@ export async function waitForStable(
 }
 
 /**
- * Same as waitForHealth but also reconciles sibling rows of the managed block
+ * Same as waitForActive but also reconciles sibling rows of the managed block
  * (design §5.3): a failed sibling marks the whole operation failed even when
  * the target row itself is active.
  */
@@ -156,8 +167,9 @@ export async function waitForHealthWithBlock(
   readBlockPhases: () => FiberPhase[],
   intervalMs = 500,
   timeoutMs = 8000,
-): Promise<HealthOutcome> {
+): Promise<ActiveOutcome> {
   const deadline = Date.now() + timeoutMs
+  let sawLive = false
   for (;;) {
     const phase = readPhase()
     if (phase === 'failed') return 'failed'
@@ -166,7 +178,8 @@ export async function waitForHealthWithBlock(
       if (siblings.some(p => p === 'failed')) return 'failed'
       return 'active'
     }
-    if (Date.now() >= deadline) return 'timeout'
+    if (phase !== undefined && phase !== null) sawLive = true
+    if (Date.now() >= deadline) return sawLive ? 'stuck' : 'absent'
     await sleep(intervalMs)
   }
 }

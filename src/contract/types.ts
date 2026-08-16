@@ -101,6 +101,8 @@ export interface AuditRecord {
   patchBeforeHash?: string
   patchAfterHash?: string
   backupPath?: string
+  /** v0.1.5 (P2-2): free-text warning — e.g. the unreflected-write caveat. */
+  note?: string
 }
 
 /** SSE event frames (contract §7). */

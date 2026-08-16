@@ -197,9 +197,9 @@ export function makeTools(service: ToolService): ReturnType<typeof defineTool>[]
         },
         render: (args, value) => {
           if (value.records.length === 0) return text('no audit records match')
-          const lines = ['ts | op | operationId | target | spec | result | mode | caller | errorCode']
+          const lines = ['ts | op | operationId | target | spec | result | mode | caller | errorCode | note']
           for (const r of value.records) {
-            lines.push(`${r.ts} | ${r.op} | ${r.operationId ?? '-'} | ${r.target ?? '-'} | ${r.spec ?? '-'} | ${r.result} | ${r.mode} | ${r.caller} | ${r.errorCode ?? '-'}`)
+            lines.push(`${r.ts} | ${r.op} | ${r.operationId ?? '-'} | ${r.target ?? '-'} | ${r.spec ?? '-'} | ${r.result} | ${r.mode} | ${r.caller} | ${r.errorCode ?? '-'} | ${r.note ?? '-'}`)
           }
           if (args.limit !== undefined && value.count >= args.limit) {
             lines.push(`(limited to ${value.count} records; refine with limit/op/from)`)
@@ -312,6 +312,7 @@ const auditRecordSchema = {
     patchBeforeHash: { type: 'string' },
     patchAfterHash: { type: 'string' },
     backupPath: { type: 'string' },
+    note: { type: 'string' },
   },
 } satisfies ValueSchemaSpec
 

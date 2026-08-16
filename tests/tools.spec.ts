@@ -206,4 +206,14 @@ describe('tools: v0.1.4 schema + render regression', () => {
     expect(text).toContain('pkg-x v1.0.0')
     expect(text).toContain('installedAt=2026-08-16T00:00:00.000Z')
   })
+
+  it('hotplug_audit render includes the note column (v0.1.5)', () => {
+    const tool = makeTools(makeService()).find(t => t.name === 'hotplug_audit')!
+    const render = tool.output.render as (args: unknown, value: { count: number; records: AuditRecord[] }) => { type: 'text'; text: string }[]
+    const rec: AuditRecord = { ts: '2026-08-16T00:00:00Z', operationId: 'op-1', op: 'install', mode: 'restart', result: 'succeeded', caller: 'tool', note: '未在 loader 生效' }
+    const blocks = render({}, { count: 1, records: [rec] })
+    const text = blocks.map(b => b.text).join('\n')
+    expect(text).toContain('note')
+    expect(text).toContain('未在 loader 生效')
+  })
 })

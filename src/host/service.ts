@@ -36,6 +36,7 @@ import {
 import {
   readFiberPhase, rowExists, waitForGone, waitForHealthWithBlock, waitForStable,
   includeRows, phaseOf, isStableRowId, type LoaderLike,
+  type ActiveOutcome, type GoneOutcome,
 } from './health.ts'
 import { OperationQueue } from './queue.ts'
 import { AuditLog } from './audit.ts'
@@ -78,14 +79,22 @@ export interface ObservationStats {
   failed: number
   timeout: number
   rollback: number
+  /** v0.1.5: writes never reflected by the loader (restart-committed). */
+  unreflected: number
 }
 
 /**
  * The hot-plug execution engine service.
  */
 export class HotplugEngineService extends Service {
-  /** Engine runtime mode (contract §9.1): config HMR availability. */
-  readonly mode: 'hot' | 'restart'
+  /** Engine runtime mode (contract §9.1). Lazily updated: starts 'restart',
+   * flips to 'hot' once an install/enable/disable observation confirms the
+   * loader reflected the write (empirical detection, v0.1.5). */
+  private _mode: 'hot' | 'restart' = 'restart'
+
+  get mode(): 'hot' | 'restart' {
+    return this._mode
+  }
 
   private readonly queue = new OperationQueue()
   private readonly auditLog: AuditLog
@@ -96,7 +105,7 @@ export class HotplugEngineService extends Service {
   private readonly pnpmPath: string | undefined
   private readonly criticalExempt: readonly string[]
   private readonly criticalExtra: readonly string[]
-  private readonly healthStats: ObservationStats = { total: 0, active: 0, failed: 0, timeout: 0, rollback: 0 }
+  private readonly healthStats: ObservationStats = { total: 0, active: 0, failed: 0, timeout: 0, rollback: 0, unreflected: 0 }
   private readonly operations = new Map<string, OperationInfo>()
   private readonly listeners = new Set<(event: EngineEvent) => void>()
   /** Last-known phases of managed rows (entry-event change detection, §7). */
@@ -113,10 +122,10 @@ export class HotplugEngineService extends Service {
     this.pnpmPath = options.pnpmPath
     this.criticalExempt = options.criticalExempt ?? []
     this.criticalExtra = options.criticalExtra ?? []
-    const hmr = (ctx as { get?: (name: string) => unknown }).get?.('hmr')
-    // T2.0 verified 2026-08-14: cordis-plugin-hmr registers its service as
-    // "hmr" (super(ctx, 'hmr')), so this probe is exact.
-    this.mode = hmr === undefined ? 'restart' : 'hot'
+    // v0.1.5 (P2-2 fix): mode is detected empirically — the observation window
+    // reads the loader tree; on first confirmed reflection it flips to 'hot'.
+    // No static ctx.get('hmr') probe (that was a false negative). Initial
+    // state is 'restart' (ADR-0007 / design §9.1).
     this.auditLog = new AuditLog(join(this.dshHomePath, 'logs', 'hotplug-engine'))
     this.startupReconcile()
     this.startPhaseMonitor(options.phasePollMs)
@@ -365,6 +374,7 @@ export class HotplugEngineService extends Service {
             ? '; 已写入 bundles 层,重启一次后生效;此后该插件启停/升级走热挂(配置 HMR)'
             : ''
           let effective: { mode: 'hot' | 'restart'; restartRequired: boolean }
+          let unreflectedNote: string | undefined
           if (isBundle) {
             const added = withBundleAdded(manifest, name)
             if (added.changed) writeManifestAtomic(dir, added.manifest)
@@ -374,10 +384,10 @@ export class HotplugEngineService extends Service {
             const patch = readPatch(dir)
             const rowId = ensureUniqueRowId(patch, slugify(name), name)
             writePatchAtomic(patchPathOf(dir), addInsertRow(patch, rowId, name))
-            // Observation window only for the HOST profile in hot mode; a
-            // non-host target is not running here, so its change is
-            // file/restart-committed (applies at the target's next boot).
-            if (isHost && this.mode === 'hot') {
+            // v0.1.5 (P2-2 fix): HOST profile ALWAYS observes (empirical mode
+            // detection). A non-host target is not running here, so its change
+            // is file/restart-committed (applies at the target's next boot).
+            if (isHost) {
               // Full-block reconciliation (design §5.3): sibling rows of the
               // managed block count toward the outcome.
               const outcome = await this.observe(() => waitForHealthWithBlock(
@@ -386,13 +396,17 @@ export class HotplugEngineService extends Service {
                 this.pollIntervalMs,
                 this.observationWindowMs,
               ))
-              if (outcome !== 'active') {
+              if (outcome === 'active') {
+                this._mode = 'hot'
+                effective = { mode: 'hot', restartRequired: false }
+              } else if (outcome === 'failed' || outcome === 'stuck') {
                 throw new EngineError(ErrorCodes.HEALTH_FAILED, `install ${name} observation ${outcome}; auto-rollback`, undefined, undefined, 'observe')
+              } else {
+                // 'absent': the loader never reflected the insert row.
+                effective = { mode: 'restart', restartRequired: true }
+                unreflectedNote = UNREFLECTED_NOTE
               }
-              effective = { mode: 'hot', restartRequired: false }
             } else {
-              // Engine restart mode / non-host target: the insert row loads
-              // on the target's next boot.
               effective = { mode: 'restart', restartRequired: true }
             }
           }
@@ -400,14 +414,14 @@ export class HotplugEngineService extends Service {
           const finished = new Date().toISOString()
           const result: MutationResult = {
             ok: true,
-            message: `install ${name} succeeded (${effective.mode})${bundleNote}${clientNote}`,
+            message: `install ${name} succeeded (${effective.mode})${bundleNote}${clientNote}${unreflectedNote ?? ''}`,
             operationId,
             mode: effective.mode,
             restartRequired: effective.restartRequired,
             installed: [name],
             rollbackHandle: operationId,
           }
-          this.auditLog.append(this.auditRecord(operationId, 'install', undefined, 'succeeded', caller, handle, undefined, spec))
+          this.auditLog.append(this.auditRecord(operationId, 'install', undefined, 'succeeded', caller, handle, undefined, spec, unreflectedNote))
           this.recordResult(operationId, result, finished)
           this.emit({ type: 'operation', operationId, op: 'install', status: 'succeeded', ts: finished })
         } catch (error) {
@@ -564,6 +578,7 @@ export class HotplugEngineService extends Service {
     this.healthStats.total += 1
     if (outcome === 'active' || outcome === 'gone' || outcome === 'stable') this.healthStats.active += 1
     else if (outcome === 'failed') this.healthStats.failed += 1
+    else if (outcome === 'absent' || outcome === 'still-active') this.healthStats.unreflected += 1
     else this.healthStats.timeout += 1
     return outcome
   }
@@ -579,7 +594,7 @@ export class HotplugEngineService extends Service {
     entryId: string,
     opts: MutateOpts,
     write: (dir: string, id: string) => Promise<{ changed: boolean }>,
-    observe: (dir: string, id: string) => Promise<void>,
+    observe: (dir: string, id: string) => Promise<ActiveOutcome | GoneOutcome>,
   ): Promise<MutationResult> {
     let dir: string
     let isHost: boolean
@@ -631,21 +646,36 @@ export class HotplugEngineService extends Service {
         try {
           handle = createBackup(this.dshHomePath, dir, operationId, op, entryId)
           const { changed } = await write(dir, entryId)
-          // Observation-window confirmation only for the HOST profile (the
-          // non-host profile is not running here; its changes apply at boot).
-          if (changed && isHost) await observe(dir, entryId)
+          // v0.1.5 (P2-2 fix): HOST profile always observes (empirical mode
+          // detection); a non-host target is not running here (file/restart).
+          let effective: { mode: 'hot' | 'restart'; restartRequired: boolean }
+          let unreflectedNote: string | undefined
+          if (changed && isHost) {
+            const outcome = await observe(dir, entryId)
+            if (outcome === 'active' || outcome === 'gone') {
+              this._mode = 'hot'
+              effective = { mode: 'hot', restartRequired: false }
+            } else if (outcome === 'failed' || outcome === 'stuck') {
+              throw new EngineError(ErrorCodes.HEALTH_FAILED, `${op} ${entryId} observation ${outcome}; auto-rollback`, undefined, undefined, 'observe')
+            } else {
+              // 'absent' (enable) / 'still-active' (disable): never reflected.
+              effective = { mode: 'restart', restartRequired: true }
+              unreflectedNote = UNREFLECTED_NOTE
+            }
+          } else {
+            effective = isHost ? this.effectiveMode() : { mode: 'restart' as const, restartRequired: true }
+          }
           finalizeBackup(this.dshHomePath, handle)
           const finished = new Date().toISOString()
-          const effective = isHost ? this.effectiveMode() : { mode: 'restart' as const, restartRequired: true }
           const result: MutationResult = {
             ok: true,
-            message: `${op} ${entryId} succeeded (${effective.mode})${isHost ? '' : '; 目标 profile 重启后生效'}`,
+            message: `${op} ${entryId} succeeded (${effective.mode})${isHost ? '' : '; 目标 profile 重启后生效'}${unreflectedNote ?? ''}`,
             operationId,
             mode: effective.mode,
             restartRequired: effective.restartRequired,
             rollbackHandle: operationId,
           }
-          this.auditLog.append(this.auditRecord(operationId, op, entryId, 'succeeded', caller, handle))
+          this.auditLog.append(this.auditRecord(operationId, op, entryId, 'succeeded', caller, handle, undefined, undefined, unreflectedNote))
           this.recordResult(operationId, result, finished)
           this.emit({ type: 'operation', operationId, op, status: 'succeeded', ts: finished })
         } catch (error) {
@@ -673,17 +703,15 @@ export class HotplugEngineService extends Service {
     return { changed: true }
   }
 
-  /** Enable observation-window confirmation (block-reconciled). */
-  private async observeEnable(dir: string, entryId: string): Promise<void> {
-    const outcome = await this.observe(() => waitForHealthWithBlock(
+  /** Enable observation-window confirmation (block-reconciled). Returns the
+   * raw outcome; the caller (mutateRow) maps it to hot/rollback/restart. */
+  private async observeEnable(dir: string, entryId: string): Promise<ActiveOutcome> {
+    return this.observe(() => waitForHealthWithBlock(
       () => readFiberPhase(this.loader(), entryId),
       () => blockRowIds(readPatch(dir), entryId).map(id => readFiberPhase(this.loader(), id) ?? null),
       this.pollIntervalMs,
       this.observationWindowMs,
     ))
-    if (outcome !== 'active') {
-      throw new EngineError(ErrorCodes.HEALTH_FAILED, `enable ${entryId} observation ${outcome}; auto-rollback`, undefined, undefined, 'observe')
-    }
   }
 
   /** Disable FILE write (no observation). Returns whether the patch changed. */
@@ -704,16 +732,14 @@ export class HotplugEngineService extends Service {
     return { changed: true }
   }
 
-  /** Disable observation-window confirmation (row unmounts). */
-  private async observeDisable(dir: string, entryId: string): Promise<void> {
-    const outcome = await this.observe(() => waitForGone(
+  /** Disable observation-window confirmation (row unmounts). Returns the raw
+   * outcome; the caller (mutateRow) maps it to hot/rollback/restart. */
+  private async observeDisable(dir: string, entryId: string): Promise<GoneOutcome> {
+    return this.observe(() => waitForGone(
       () => readFiberPhase(this.loader(), entryId),
       this.pollIntervalMs,
       this.observationWindowMs,
     ))
-    if (outcome !== 'gone') {
-      throw new EngineError(ErrorCodes.HEALTH_FAILED, `disable ${entryId} observation ${outcome}; auto-rollback`, undefined, undefined, 'observe')
-    }
   }
 
   /** Post-rollback stabilization: wait for the row to leave 'failed'.
@@ -743,6 +769,7 @@ export class HotplugEngineService extends Service {
     handle: { patchBeforeHash: string; patchAfterHash?: string; patchBackup: string },
     errorCode?: string,
     spec?: string,
+    note?: string,
   ): AuditRecord {
     return {
       ts: new Date().toISOString(),
@@ -757,6 +784,7 @@ export class HotplugEngineService extends Service {
       patchBeforeHash: handle.patchBeforeHash,
       patchAfterHash: handle.patchAfterHash,
       backupPath: handle.patchBackup,
+      note,
     }
   }
 
@@ -1037,6 +1065,11 @@ const ENGINE_PACKAGE_NAME = 'dsh-hotplug-engine'
 /** The engine's own bundle row id (cordis.patch.yml insert id). Enabling or
  * disabling it on the host profile would unmount the running service. */
 const ENGINE_ROW_ID = 'hotplug-engine'
+
+/** v0.1.5 (P2-2): warning attached to a write the loader never reflected —
+ * restart-committed, but may be a restart environment OR a silent loader
+ * rejection. Carried in MutationResult.message and AuditRecord.note. */
+const UNREFLECTED_NOTE = '; 警告: 未在 loader 生效, 可能 restart 环境或 loader 拒绝, 重启后请核对, 可用 handle 回滚'
 
 /** Empty loader (no entries) used when the loader service is absent. */
 const EMPTY_LOADER: LoaderLike = { entries: () => [] }
