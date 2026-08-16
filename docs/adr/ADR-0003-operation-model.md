@@ -30,6 +30,6 @@
 - **决策 2 观察窗口结果按「loader 是否反映本次写入」三分**(经验判定,替代单一「超时即回滚」):
   - **反映成功**:enable/install 行挂载 `active`、disable 行卸载 `gone` → `mode:'hot'`(成功);
   - **反映失败**:行进入 `failed`,或 enable/install 行卡 loading/pending 超时 → 自动回滚(坏行,保守,原语义保留);
-  - **未反映**:enable/install 行**从未挂载**(全程 `readFiberPhase` 返回 `undefined`)、disable 行**仍 active 未卸载** → 判 `mode:'restart'` + `restartRequired:true`,**保留写入、下次启动加载、不自动回滚**(等价于 ADR-0007 的 restart 行为;质量门仍是坏包门禁;**结果/审计 MUST 附「未在 loader 生效,可能 restart 或 loader 拒绝,重启后核对」警示**)。
+  - **未反映**:enable/install 行**从未挂载**(全程 `readFiberPhase` 返回 `undefined`)、disable 行**仍 active 未卸载** → 判 `mode:'restart'` + `restartRequired:true`,**保留写入、下次启动加载、不自动回滚**(等价于 ADR-0007 的 restart 行为;质量门仍是坏包门禁;**结果/审计 MUST 附「未在 loader 生效,可能为 restart 环境或 loader 拒绝,重启后请核对,可用 handle 回滚」警示**)。
 - **经验判定动机**:`ctx.get('hmr')` 探测的是 cordis-plugin-hmr(模块级 HMR,实测 web profile `disabled:true`),与引擎 patch 行真正依赖的「配置热应用/重挂」(CLI `root:[]`)是两条独立机制,静态探测产生假阴性(v0.1.4 验收 P2-2)。改为以 loader 树真实挂载状态为唯一真源。
 - 后果「宁可失败不留坏状态」仍适用于「已挂载」场景;「从未挂载」非失败而是重启语义。

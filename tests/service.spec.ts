@@ -127,6 +127,9 @@ describe('service: mode and snapshot', () => {
     expect(r.mode).toBe('restart')
     expect(r.restartRequired).toBe(true)
     expect(r.message).toContain('未在 loader 生效')
+    // audit carries the warning in note (v0.1.5)
+    const recs = svc.audit({ op: 'disable' })
+    expect(recs.some(a => a.note?.includes('未在 loader 生效'))).toBe(true)
   })
 
   it('snapshot projects the official tree with source classification', () => {

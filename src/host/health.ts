@@ -1,8 +1,9 @@
 /**
  * Health monitor: observation-window confirmation over the loader tree
- * (design §5.3 / ADR-0003). Polls a target row's fiber phase until active
- * (success), failed (rollback), or timeout (conservative rollback). The M1
- * monitor also supports all-row reconciliation of a managed block.
+ * (design §5.3 / ADR-0003). Polls a target row's fiber phase. v0.1.5
+ * three-way: reflected success (active/gone), reflected failure (failed/stuck
+ * → rollback), or unreflected (absent/still-active → restart). The M1 monitor
+ * also supports all-row reconciliation of a managed block.
  *
  * Loader walking follows the include-tree row view (row.options.id is the
  * stable include-row id; loader random ids are 8-hex).
@@ -69,29 +70,6 @@ export function rowExists(loader: LoaderLike, entryId: string): boolean {
 export type ActiveOutcome = 'active' | 'failed' | 'stuck' | 'absent'
 /** Observation result of a disable health poll (v0.1.5 three-way). */
 export type GoneOutcome = 'gone' | 'failed' | 'still-active' | 'stuck'
-
-/**
- * Poll a target row until it reaches a settled outcome.
- * @param readPhase returns the current phase of the target row.
- * @param intervalMs poll interval.
- * @param timeoutMs overall window (default 8000).
- */
-export async function waitForHealth(
-  readPhase: () => FiberPhase | undefined,
-  intervalMs = 500,
-  timeoutMs = 8000,
-): Promise<ActiveOutcome> {
-  const deadline = Date.now() + timeoutMs
-  let sawLive = false
-  for (;;) {
-    const phase = readPhase()
-    if (phase === 'active') return 'active'
-    if (phase === 'failed') return 'failed'
-    if (phase !== undefined && phase !== null) sawLive = true
-    if (Date.now() >= deadline) return sawLive ? 'stuck' : 'absent'
-    await sleep(intervalMs)
-  }
-}
 
 /**
  * Poll until the target row is ACTIVE (enable confirmation). 'failed' beats
