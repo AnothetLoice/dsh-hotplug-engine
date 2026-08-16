@@ -15,7 +15,7 @@
  * @module dsh-hotplug-engine/host/backup
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 import { EngineError, ErrorCodes } from '../contract/types.ts'
@@ -115,6 +115,21 @@ export function finalizeBackup(dshHomePath: string, handle: BackupHandle): void 
   }
 }
 
+/**
+ * Remove a finished operation's sidecar (terminal state). Once an operation
+ * has been rolled back it can never be rolled back again, and leaving the
+ * sidecar with `patchAfterHash === undefined` would make startup reconcile
+ * re-audit it as `OP_INTERRUPTED` on every restart (P1-2). Best-effort: the
+ * `.bak` files are kept (they are referenced by audit `backupPath`).
+ */
+export function deleteSidecar(dshHomePath: string, operationId: string): void {
+  try {
+    unlinkSync(sidecarPath(backupDir(dshHomePath), operationId))
+  } catch {
+    // already gone / unreadable — a missing sidecar is the desired end state
+  }
+}
+
 /** Load a persisted handle from its operation id. */
 export function loadBackup(dshHomePath: string, operationId: string): BackupHandle | undefined {
   assertSafeOperationId(operationId)
@@ -182,6 +197,7 @@ export function rollbackByHandle(dshHomePath: string, handle: BackupHandle): { m
     const { content, removed } = removeManagedBlockForId(current, handle.targetRowId)
     if (removed) {
       writePatchAtomic(handle.patchPath, content)
+      deleteSidecar(dshHomePath, handle.operationId)
       return { mode: 'block-scoped' }
     }
     // 2) Row-level undo for user-written rows (inline disabled: toggle,
@@ -193,6 +209,7 @@ export function rollbackByHandle(dshHomePath: string, handle: BackupHandle): { m
         : { content: current, changed: false }
     if (undone.changed) {
       writePatchAtomic(handle.patchPath, undone.content)
+      deleteSidecar(dshHomePath, handle.operationId)
       return { mode: 'block-scoped' }
     }
     throw new EngineError(
@@ -221,5 +238,6 @@ export function rollbackByHandle(dshHomePath: string, handle: BackupHandle): { m
       writeManifestAtomic(dirname(handle.manifestPath), parsed)
     }
   }
+  deleteSidecar(dshHomePath, handle.operationId)
   return { mode: 'restore' }
 }

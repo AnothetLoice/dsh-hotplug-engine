@@ -12,6 +12,7 @@
 | `02-design.md` | 详细设计 | 模块布局、写入层规范、安装/回滚流程、质量门、观察窗口、审计、并发、构建、测试、M1-M4 实施顺序 |
 | `03-optimization-directions.md` | **优化方向(非契约/非计划)** | 引擎基础 A–D(pnpm 定位/Windows 可执行性/bundle 热加载编排/错误诊断)+ 看板 UI E–H(搜索/排序/状态色彩/高危停用警告);验收标准与计划制定指引;实施计划见 `plans/06-M6-optimization.md`(v0.1.4) |
 | `04-dynamic-assembly-eval.md` | 评估文档(v2 候选) | 动态服务装配评估:纯客户端 bundle 免重启可行性,结论"不升 v2"(v0.1.4 方向 C) |
+| `05-acceptance-v0.1.4.md` | **实机验收交接(v0.1.4)** | 0–5 逐项验收结论、问题清单、0.1.3→0.1.4 回归对照、证据路径;§8 复测记录 + 开发侧第二轮修复:P0-1/P0-2/P1-1 已闭环,P1-2 根治(回滚后删 sidecar),P2-2 待 v0.1.5 决策(见 02-design §9.3) |
 | `adr/ADR-0001-package-shape.md` | 决策记录 | 包形态与挂载(bundle 双面) |
 | `adr/ADR-0002-service-identity.md` | 决策记录 | 服务身份与契约版本化(ctx.hotplugEngine, v1 只增不改) |
 | `adr/ADR-0003-operation-model.md` | 决策记录 | 操作模型(串行队列 + 观察窗口自动回滚 + 按块回滚 + 启动对账) |

@@ -254,6 +254,24 @@ disable(entryId) / enable(entryId)
 - 非 bundle 包 → pnpm 装依赖 + managed insert 行:引擎 `'hot'` → `mode:'hot'`;引擎 `'restart'` → **仍写 insert 行** + `mode:'restart'` + `restartRequired`(重启后由 patch 层加载生效——HMR 只省重启,不改变 boot 消费 insert 行的事实,契约不变);
 - 客户端新插件:任何模式下,`MutationResult` MUST 携带提示「新客户端 bundle 需刷新页面」(机制限制:SSE 不推 graph 帧,见 audit §1.3)。
 
+### 9.3 已知问题:P2-2「mode=restart 与配置热应用矛盾」(v0.1.4 验收发现,待 v0.1.5 决策)
+
+**现象**:写操作(insert/disable/enable)返回 `mode:'restart'` + `restartRequired:true`,但目标行**立即** phase=active/none(配置热应用已实时生效)。
+
+**根因**:§9.1 用 `ctx.get('hmr')` 探测「配置热应用可用性」,探测对象是 **cordis-plugin-hmr 的服务注册**。实测 web profile 中该插件的 `hmr` 配置行被官方 `disabled:true`(preview TODO),故 `ctx.get('hmr') === undefined` → 引擎恒判 `'restart'`。但「配置热应用」(patch insert/disable 行实时生效)由 **CLI 程序化重挂 `root:[]`** 提供,是与 cordis-plugin-hmr 相互独立、在本环境仍然活跃的另一条机制。结论:探测测错了对象——测的是「模块级 HMR 插件」,而引擎 patch 行真正依赖的是「配置热应用/重挂」,二者在 preview 期被官方分开(前者 disabled、后者 active),产生假阴性。
+
+**影响**(不止措辞):
+1. `MutationResult.mode`/`restartRequired` 误报,消费方收到「需重启」而实际已生效的矛盾信息;
+2. 更严重:引擎 mode='restart' 时**跳过观察窗口**(install/enable/disable 的 health 确认分支),失去「热挂失败自动回滚」防线——坏行在「重启模式」下不被捕获,直到下次启动 fail-loud。
+
+**解决方案(v0.1.5 候选,需按设计流程先改契约 §9 再实现)**:
+- **推荐:以观察结果为唯一真源(empirical mode detection)**。宿主 profile 的 patch 行写操作**始终运行观察窗口**,以 loader 真实 fiber phase 判定生效方式:
+  - phase → `active`(install/enable)/ `gone`(disable)→ `mode:'hot'` + `restartRequired:false`;
+  - 观察窗口超时 → `mode:'restart'` + `restartRequired:true`(行保留、下次启动加载,**不自动回滚**);
+  - phase → `failed` → 自动回滚(坏行,现有行为保留)。
+  - 与「状态唯一真源 = 官方树」一致:loader 的 phase 变化即 ground truth,不依赖「热应用由哪个机制提供」。
+- 备选(不推荐):换探测对象,直接探测「配置热应用/重挂」机制是否活跃。preview 期该机制是 CLI 胶水细节、可能变动,探测易再假阴性,违反「只消费官方机制、不依赖胶水实现细节」红线。
+
 ## 10. 客户端最小管理 UI(范围锁定)
 
 - 面板:list(entries/packages/insertRows 三视图,只读投影)+ enable/disable 开关 + rollback 按钮(按 operation 历史)+ audit 查询;

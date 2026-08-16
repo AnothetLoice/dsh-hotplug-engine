@@ -80,8 +80,8 @@ html[data-dsh-hotplug-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard
 .hpe-sortable{cursor:pointer;user-select:none}
 .hpe-sortable:hover{color:var(--dsw-alias-label-primary)}
 /* v0.1.4 direction G: row state color (mounted green / disabled red / failed warn) */
-.hpe-table tbody tr[data-state=mounted]{background:var(--dsw-alias-state-success-secondary)}
-.hpe-table tbody tr[data-state=disabled]{background:var(--dsw-alias-state-error-secondary)}
+.hpe-table tbody tr[data-state=mounted]{background:rgba(159, 226, 191, 0.8)}
+.hpe-table tbody tr[data-state=disabled]{background:rgba(248, 131, 121, 0.8)}
 .hpe-table tbody tr[data-state=failed]{background:var(--dsw-alias-state-warn-secondary)}
 /* v0.1.4 direction H: stronger edge for critical+disabled rows */
 .hpe-table tbody tr[data-critical=true][data-state=disabled]{box-shadow:inset 3px 0 0 var(--dsw-alias-state-error-primary)}

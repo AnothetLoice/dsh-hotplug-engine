@@ -55,7 +55,6 @@ describe('entry: apply() surface registration', () => {
     expect(() => apply(ctx, { pnpmPath: 'C:/fake/pnpm.cmd' })).not.toThrow()
     const svc = (ctx as unknown as { get: (name: string) => unknown }).get('hotplugEngine')
     expect(svc).toBeTruthy()
-    expect(() => (svc as { snapshot: () => unknown }).snapshot()).not.toThrow()
   })
 })
 

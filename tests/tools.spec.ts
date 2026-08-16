@@ -8,8 +8,8 @@ const fakeExec = undefined as never
 
 const SNAP: EngineSnapshot = {
   profile: 'web', mode: 'hot',
-  entries: [{ entryId: 'row-a', moduleName: 'pkg-x', source: 'insert', enabled: true, patchTargetable: true, fiberPhase: 'active', managed: true }],
-  packages: [{ name: 'pkg-x', isBundle: false, version: '1.0.0' }],
+  entries: [{ entryId: 'row-a', moduleName: 'pkg-x', source: 'insert', enabled: true, patchTargetable: true, fiberPhase: 'active', managed: true, critical: true }],
+  packages: [{ name: 'pkg-x', isBundle: false, version: '1.0.0', installedAt: '2026-08-16T00:00:00.000Z' }],
   insertRows: [{ id: 'row-a', name: 'pkg-x', managed: true }],
 }
 
@@ -170,5 +170,40 @@ describe('tools: execute paths share the service', () => {
     const result = await tool.execute({ spec: 'pkg-x' }, fakeExec) as MutationResult
     expect(result.ok).toBe(true)
     expect(result.operationId).toBe('op-1')
+  })
+})
+
+describe('tools: v0.1.4 schema + render regression', () => {
+  it('renderMutation outputs operationId/rollbackHandle/errors[].stage (P1-1/P0-2)', () => {
+    const tool = makeTools(makeService()).find(t => t.name === 'hotplug_install')!
+    const render = tool.output.render as (args: unknown, value: MutationResult) => { type: 'text'; text: string }[]
+    const blocks = render({}, { ok: false, message: 'fail', operationId: 'op-1', rollbackHandle: 'op-1', errors: [{ code: 'HOTPLUG.PNPM_ADD_FAILED', detail: 'd', stage: 'install' }] })
+    const text = blocks.map(b => b.text).join('\n')
+    expect(text).toContain('operationId: op-1')
+    expect(text).toContain('rollbackHandle: op-1')
+    expect(text).toContain('error[HOTPLUG.PNPM_ADD_FAILED](install): d')
+  })
+
+  it('hotplug_status render shows critical marker (P0-1)', () => {
+    const tool = makeTools(makeService()).find(t => t.name === 'hotplug_status')!
+    const render = tool.output.render as (args: unknown, value: { profile: string; mode: string; entry: RuntimeEntry | null; snapshot: EngineSnapshot | null }) => { type: 'text'; text: string }[]
+    const blocks = render({}, { profile: 'web', mode: 'hot', entry: SNAP.entries[0], snapshot: null })
+    expect(blocks[0].text).toContain('critical')
+  })
+
+  it('hotplug_status snapshot schema carries critical/installedAt (P0-1)', async () => {
+    const tool = makeTools(makeService()).find(t => t.name === 'hotplug_status')!
+    const result = await tool.execute({}, fakeExec) as { snapshot: EngineSnapshot | null }
+    expect(result.snapshot?.entries[0].critical).toBe(true)
+    expect(result.snapshot?.packages[0].installedAt).toBe('2026-08-16T00:00:00.000Z')
+  })
+
+  it('hotplug_status snapshot render lists package details incl. installedAt', () => {
+    const tool = makeTools(makeService()).find(t => t.name === 'hotplug_status')!
+    const render = tool.output.render as (args: unknown, value: { profile: string; mode: string; entry: RuntimeEntry | null; snapshot: EngineSnapshot | null }) => { type: 'text'; text: string }[]
+    const blocks = render({}, { profile: 'web', mode: 'hot', entry: null, snapshot: SNAP })
+    const text = blocks.map(b => b.text).join('\n')
+    expect(text).toContain('pkg-x v1.0.0')
+    expect(text).toContain('installedAt=2026-08-16T00:00:00.000Z')
   })
 })

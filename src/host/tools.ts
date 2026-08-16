@@ -85,7 +85,7 @@ export function makeTools(service: ToolService): ReturnType<typeof defineTool>[]
           const lines = [`profile=${value.profile} mode=${value.mode}`]
           if (value.entry !== null) {
             const e = value.entry
-            lines.push(`entry: ${e.entryId} ${e.moduleName} [${e.source}] enabled=${e.enabled} targetable=${e.patchTargetable} phase=${e.fiberPhase ?? 'none'} managed=${e.managed}`)
+            lines.push(`entry: ${e.entryId} ${e.moduleName} [${e.source}] enabled=${e.enabled} targetable=${e.patchTargetable} phase=${e.fiberPhase ?? 'none'} managed=${e.managed}${e.critical === true ? ' critical' : ''}`)
           } else if (value.snapshot !== null) {
             const s = value.snapshot
             lines.push(
@@ -94,7 +94,10 @@ export function makeTools(service: ToolService): ReturnType<typeof defineTool>[]
               `insert rows: ${s.insertRows.length} managed=${s.insertRows.filter(r => r.managed).length}`,
             )
             for (const e of s.entries) {
-              lines.push(`- ${e.entryId} ${e.moduleName} [${e.source}] enabled=${e.enabled} phase=${e.fiberPhase ?? 'none'}${e.managed ? ' (managed)' : ''}`)
+              lines.push(`- ${e.entryId} ${e.moduleName} [${e.source}] enabled=${e.enabled} phase=${e.fiberPhase ?? 'none'}${e.managed ? ' (managed)' : ''}${e.critical === true ? ' (critical)' : ''}`)
+            }
+            for (const p of s.packages) {
+              lines.push(`- ${p.name} v${p.version ?? '?'}${p.isBundle ? ' [bundle]' : ''}${p.installedAt !== undefined ? ` installedAt=${p.installedAt}` : ''}`)
             }
           }
           return text(lines.join('\n'))
@@ -194,9 +197,9 @@ export function makeTools(service: ToolService): ReturnType<typeof defineTool>[]
         },
         render: (args, value) => {
           if (value.records.length === 0) return text('no audit records match')
-          const lines = ['ts | op | target | result | mode | caller | errorCode']
+          const lines = ['ts | op | operationId | target | spec | result | mode | caller | errorCode']
           for (const r of value.records) {
-            lines.push(`${r.ts} | ${r.op} | ${r.target ?? '-'} | ${r.result} | ${r.mode} | ${r.caller} | ${r.errorCode ?? '-'}`)
+            lines.push(`${r.ts} | ${r.op} | ${r.operationId ?? '-'} | ${r.target ?? '-'} | ${r.spec ?? '-'} | ${r.result} | ${r.mode} | ${r.caller} | ${r.errorCode ?? '-'}`)
           }
           if (args.limit !== undefined && value.count >= args.limit) {
             lines.push(`(limited to ${value.count} records; refine with limit/op/from)`)
@@ -225,6 +228,7 @@ const runtimeEntrySchema = {
     patchTargetable: { type: 'boolean', required: true },
     fiberPhase: { oneOf: [{ type: 'string', enum: ['pending', 'loading', 'active', 'failed', 'unloading'] }, { type: 'null' }], required: true },
     managed: { type: 'boolean', required: true },
+    critical: { type: 'boolean' },
   },
 } satisfies ValueSchemaSpec
 
@@ -245,6 +249,7 @@ const snapshotSchema = {
           name: { type: 'string', required: true },
           isBundle: { type: 'boolean', required: true },
           version: { type: 'string' },
+          installedAt: { type: 'string' },
         },
       },
       required: true,
@@ -284,6 +289,7 @@ const mutationResultSchema = {
         properties: {
           code: { type: 'string', required: true },
           detail: { type: 'string', required: true },
+          stage: { type: 'string', enum: ['gate', 'install', 'observe'] },
         },
       },
     },
@@ -314,9 +320,19 @@ function text(value: string): { type: 'text'; text: string }[] {
   return [{ type: 'text', text: value }]
 }
 
-/** Shared render for mutation results (ok + message + restart hint). */
-function renderMutation(args: unknown, value: { ok: boolean; message: string; restartRequired?: boolean }): { type: 'text'; text: string }[] {
+/** Shared render for mutation results (ok + message + restart hint + handle +
+ * installed + errors, so the agent can chain rollback by handle). */
+function renderMutation(args: unknown, value: MutationResult): { type: 'text'; text: string }[] {
   const dryRun = (args as { dryRun?: boolean }).dryRun
   const prefix = dryRun === true ? 'dryRun' : value.ok ? 'ok' : 'FAILED'
-  return text(`${prefix}: ${value.message}${value.restartRequired === true ? ' [restart required]' : ''}`)
+  const lines = [`${prefix}: ${value.message}${value.restartRequired === true ? ' [restart required]' : ''}`]
+  if (value.operationId !== undefined) lines.push(`operationId: ${value.operationId}`)
+  if (value.rollbackHandle !== undefined) lines.push(`rollbackHandle: ${value.rollbackHandle}`)
+  if (value.installed !== undefined && value.installed.length > 0) lines.push(`installed: ${value.installed.join(', ')}`)
+  if (value.errors !== undefined && value.errors.length > 0) {
+    for (const e of value.errors) {
+      lines.push(`error[${e.code}]${e.stage !== undefined ? `(${e.stage})` : ''}: ${e.detail}`)
+    }
+  }
+  return text(lines.join('\n'))
 }

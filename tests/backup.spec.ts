@@ -53,6 +53,18 @@ describe('backup: rollback paths', () => {
     expect(readFileSync(patchPath, 'utf8')).toBe(before)
   })
 
+  it('deletes the sidecar after a successful rollback (P1-2 terminal state)', () => {
+    const { dshHome, profileDir, patchPath } = setup()
+    const handle = createBackup(dshHome, profileDir, 'op-7000-1', 'disable', 'row-a')
+    writeFileSync(patchPath, addInsertRow(EMPTY_TEMPLATE, 'row-a', 'pkg'), 'utf8')
+    finalizeBackup(dshHome, handle)
+    expect(loadBackup(dshHome, 'op-7000-1')).not.toBeUndefined()
+    rollbackByHandle(dshHome, handle)
+    // A rolled-back operation is terminal: no sidecar → startup reconcile
+    // can never re-audit it as OP_INTERRUPTED, and re-rollback is ROLLBACK_NOT_FOUND.
+    expect(loadBackup(dshHome, 'op-7000-1')).toBeUndefined()
+  })
+
   it('path B removes only the managed block when a concurrent writer changed the patch', () => {
     const { dshHome, profileDir, patchPath } = setup()
     const handle = createBackup(dshHome, profileDir, 'op-4000-1', 'disable', 'row-a')

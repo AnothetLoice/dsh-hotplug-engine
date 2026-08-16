@@ -545,7 +545,15 @@ export class HotplugEngineService extends Service {
     const finished = new Date().toISOString()
     const result = failureResult(error, operationId, rollbackNote)
     const auditHandle = handle ?? emptyBackupRef
-    this.auditLog.append(this.auditRecord(operationId, op, target, rolledBack ? 'rolled-back' : 'failed', caller, auditHandle, codeOf(error)))
+    // Install records carry the source in `spec` (not `target`) to match the
+    // success path's audit shape (§4 P2-1: one field, one landing spot).
+    this.auditLog.append(this.auditRecord(
+      operationId, op,
+      op === 'install' ? undefined : target,
+      rolledBack ? 'rolled-back' : 'failed',
+      caller, auditHandle, codeOf(error),
+      op === 'install' ? target : undefined,
+    ))
     this.recordResult(operationId, result, finished, rolledBack ? 'rolled-back' : undefined)
     this.emit({ type: 'operation', operationId, op, status: 'failed', ts: finished })
   }
@@ -919,10 +927,15 @@ export class HotplugEngineService extends Service {
     try {
       const backupRoot = backupDir(this.dshHomePath)
       if (existsSync(backupRoot)) {
+        // P1-2: dedupe OP_INTERRUPTED across restarts — collect already-audited
+        // operationIds once, then skip sidecars whose interruption was recorded.
+        const interruptedIds = new Set(
+          this.auditLog.query().filter(r => r.errorCode === ErrorCodes.OP_INTERRUPTED).map(r => r.operationId),
+        )
         for (const file of readdirSync(backupRoot).filter(f => f.endsWith('.json'))) {
           try {
             const sidecar = JSON.parse(readFileSync(join(backupRoot, file), 'utf8')) as BackupHandle
-            if (sidecar.patchAfterHash === undefined) {
+            if (sidecar.patchAfterHash === undefined && !interruptedIds.has(sidecar.operationId)) {
               this.auditLog.append({
                 ts: new Date().toISOString(),
                 operationId: sidecar.operationId,
@@ -935,6 +948,7 @@ export class HotplugEngineService extends Service {
                 patchBeforeHash: sidecar.patchBeforeHash,
                 backupPath: sidecar.patchBackup,
               })
+              interruptedIds.add(sidecar.operationId)
             }
           } catch {
             // skip unreadable sidecars
