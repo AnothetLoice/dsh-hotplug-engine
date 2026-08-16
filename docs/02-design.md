@@ -187,10 +187,14 @@ disable(entryId) / enable(entryId)
 ### 5.3 观察窗口(health.ts)
 
 - 默认 **8s**(配置可调,`config.observationWindowMs`),轮询间隔 500ms;
-- 判定:目标行 `fiberPhase === 'active'` → 成功;`'failed'` → 自动回滚;超时 → 自动回滚(保守);
+- **判定(经验判定,v0.1.5 修订,按「loader 是否反映本次写入」三分)**:
+  - **反映成功**:install/enable 行挂载 `active`、disable 行卸载 `gone` → `mode:'hot'`;
+  - **反映失败**:行进入 `failed`,或 install/enable 行卡 loading/pending 超时 → 自动回滚(坏行,保守);
+  - **未反映**:install/enable 行全程 `undefined`(从未挂载)、disable 行仍 `active`(未卸载)→ `mode:'restart'` + `restartRequired:true`,保留写入、下次启动加载、不自动回滚;**结果/审计 MUST 附「未在 loader 生效,可能为 restart 环境或 loader 拒绝,重启后请核对,可用 handle 回滚」警示**;
+- **健康原语粒度要求(v0.1.5)**:`waitForHealth*` 必须区分「从未挂载(全程 `readFiberPhase` 返回 `undefined`)」vs「已挂载但卡 loading/pending」——二者现状都折叠为 `timeout`,落地时须扩展返回(如 `absent`/`stuck`),否则「未反映 vs 反映失败」无法判;
 - **对账范围**(2026-08-14 review):窗口内同时核对本次写入的 managed block **全行**——目标行 active 但同块其他行 failed / 级联扰动 → 视为失败回滚(坏安装可能不标 failed 目标行却扰动他行);
 - 回滚 = 摘除本次写入(insert 块/disable 块/bundles 追加)+ 恢复备份 → 审计 `rolled-back` + `HOTPLUG.*` 错误码;
-- **命中率校准**:M2 起记录窗口命中/超时/回滚统计,校准 8s 默认值(重客户端插件激活可能需更长)。
+- **命中率校准**:M2 起记录窗口命中/未反映/回滚统计,校准 8s 默认值(重客户端插件激活可能需更长)。
 
 ### 5.4 崩溃恢复 / 启动对账(2026-08-14 review 新增)
 
@@ -246,31 +250,33 @@ disable(entryId) / enable(entryId)
 ## 9. 模式与降级(与契约 §9 对应,两轴分离)
 
 ### 9.1 引擎运行模式(`EngineSnapshot.mode`)
-- 服务 init:`ctx.get('hmr') === undefined` → `'restart'`,否则 `'hot'`;
-- ⚠️ 实现前实机核对 hmr 服务注册名(audit §1.2:CLI 程序化重挂),防探测假阴性。
+- 服务 init:初始 `'restart'`;懒更新——首次写操作观察窗口确认目标行被 loader 挂载(经验判定)后置 `'hot'` 并保持;
+- 不再用 `ctx.get('hmr')` 静态探测(v0.1.5 修订:v0.1.4 验收 P2-2 证实其假阴性——它测模块级 HMR 插件,与「配置热应用/重挂」两条独立机制;见 ADR-0007 修订)。
 
 ### 9.2 单次操作生效方式(`MutationResult.mode`)
 - bundle 包 → 写 bundles + `mode:'restart'` + `restartRequired`;
-- 非 bundle 包 → pnpm 装依赖 + managed insert 行:引擎 `'hot'` → `mode:'hot'`;引擎 `'restart'` → **仍写 insert 行** + `mode:'restart'` + `restartRequired`(重启后由 patch 层加载生效——HMR 只省重启,不改变 boot 消费 insert 行的事实,契约不变);
+- 非 bundle 包 → pnpm 装依赖 + managed insert 行:观察窗口内目标行被 loader 挂载且 `active` → `mode:'hot'`;行**从未挂载** → **仍写 insert 行** + `mode:'restart'` + `restartRequired`(重启后由 patch 层加载生效——HMR 只省重启,不改变 boot 消费 insert 行的事实,契约不变);
 - 客户端新插件:任何模式下,`MutationResult` MUST 携带提示「新客户端 bundle 需刷新页面」(机制限制:SSE 不推 graph 帧,见 audit §1.3)。
 
-### 9.3 已知问题:P2-2「mode=restart 与配置热应用矛盾」(v0.1.4 验收发现,待 v0.1.5 决策)
+### 9.3 已知问题:P2-2「mode=restart 与配置热应用矛盾」(v0.1.5 已定案)
 
 **现象**:写操作(insert/disable/enable)返回 `mode:'restart'` + `restartRequired:true`,但目标行**立即** phase=active/none(配置热应用已实时生效)。
 
-**根因**:§9.1 用 `ctx.get('hmr')` 探测「配置热应用可用性」,探测对象是 **cordis-plugin-hmr 的服务注册**。实测 web profile 中该插件的 `hmr` 配置行被官方 `disabled:true`(preview TODO),故 `ctx.get('hmr') === undefined` → 引擎恒判 `'restart'`。但「配置热应用」(patch insert/disable 行实时生效)由 **CLI 程序化重挂 `root:[]`** 提供,是与 cordis-plugin-hmr 相互独立、在本环境仍然活跃的另一条机制。结论:探测测错了对象——测的是「模块级 HMR 插件」,而引擎 patch 行真正依赖的是「配置热应用/重挂」,二者在 preview 期被官方分开(前者 disabled、后者 active),产生假阴性。
+**根因**:旧 §9.1 用 `ctx.get('hmr')` 探测「配置热应用可用性」(v0.1.5 已改经验判定),探测对象是 **cordis-plugin-hmr 的服务注册**。实测 web profile 中该插件的 `hmr` 配置行被官方 `disabled:true`(preview TODO),故 `ctx.get('hmr') === undefined` → 引擎恒判 `'restart'`。但「配置热应用」(patch insert/disable 行实时生效)由 **CLI 程序化重挂 `root:[]`** 提供,是与 cordis-plugin-hmr 相互独立、在本环境仍然活跃的另一条机制。结论:探测测错了对象——测的是「模块级 HMR 插件」,而引擎 patch 行真正依赖的是「配置热应用/重挂」,二者在 preview 期被官方分开(前者 disabled、后者 active),产生假阴性。
 
-**影响**(不止措辞):
+**影响**:
 1. `MutationResult.mode`/`restartRequired` 误报,消费方收到「需重启」而实际已生效的矛盾信息;
-2. 更严重:引擎 mode='restart' 时**跳过观察窗口**(install/enable/disable 的 health 确认分支),失去「热挂失败自动回滚」防线——坏行在「重启模式」下不被捕获,直到下次启动 fail-loud。
+2. install 在 `'restart'` 判定下**跳过观察窗口**(`service.ts` `if (isHost && this.mode === 'hot')`),失去「坏行自动回滚」防线;enable/disable 观察窗口照跑(与 install 不一致),但 `effectiveMode()` 仍报 `'restart'`——仅消息矛盾。
 
-**解决方案(v0.1.5 候选,需按设计流程先改契约 §9 再实现)**:
-- **推荐:以观察结果为唯一真源(empirical mode detection)**。宿主 profile 的 patch 行写操作**始终运行观察窗口**,以 loader 真实 fiber phase 判定生效方式:
-  - phase → `active`(install/enable)/ `gone`(disable)→ `mode:'hot'` + `restartRequired:false`;
-  - 观察窗口超时 → `mode:'restart'` + `restartRequired:true`(行保留、下次启动加载,**不自动回滚**);
-  - phase → `failed` → 自动回滚(坏行,现有行为保留)。
-  - 与「状态唯一真源 = 官方树」一致:loader 的 phase 变化即 ground truth,不依赖「热应用由哪个机制提供」。
-- 备选(不推荐):换探测对象,直接探测「配置热应用/重挂」机制是否活跃。preview 期该机制是 CLI 胶水细节、可能变动,探测易再假阴性,违反「只消费官方机制、不依赖胶水实现细节」红线。
+**解决方案(已定案,2026-08-16 用户授权 A 方案)**:
+- **以观察结果为唯一真源(empirical mode detection)**,宿主 profile 的 patch 行写操作**始终运行观察窗口**,以 loader 真实 fiber phase 判定(按「是否反映本次写入」三分):
+  - **反映成功**:install/enable 行挂载 `active`、disable 行卸载 `gone` → `mode:'hot'` + `restartRequired:false`;
+  - **反映失败**:行挂载后 `failed`,或 install/enable 行卡 loading/pending 超时 → 自动回滚(坏行,保守,ADR-0003 不变);
+  - **未反映**:install/enable 行全程 `undefined`(从未挂载)、disable 行仍 `active`(未卸载)→ `mode:'restart'` + `restartRequired:true`,保留写入、下次启动加载,不自动回滚。
+- **引擎级 `EngineSnapshot.mode`(A 方案)**:初始 `'restart'`,首次操作确认热挂后置 `'hot'` 并保持(懒更新)。
+- 与「状态唯一真源 = 官方树」一致:loader 的 phase 变化即 ground truth,不依赖「热应用由哪个机制提供」。
+- 关联修订:ADR-0003(观察结果三分)、ADR-0007(探测手段替换 + mode 懒更新)。
+- **落地要点(来自 2026-08-16 双 review 架构视角)**:① `service.ts` install 观察门禁 `if (isHost && this.mode === 'hot')` 必须移除(宿主恒观察),否则首次 install 在 mode 初始 `'restart'` 下永远无法确认热挂、mode 永不翻转;② `health.ts` 须新增「从未挂载 vs 卡 loading」粒度(见 §5.3);③ `rollback` 操作**不触发** mode 判定(其观察是「回稳」非「热挂确认」),仅 install/enable/disable 的「反映成功」确认 `'hot'`;④ 审计记录的 `mode` 字段记录操作当时的引擎级 mode(懒更新下首操作前为 `'restart'`),与单次 `MutationResult.mode` 语义不混用。
 
 ## 10. 客户端最小管理 UI(范围锁定)
 
@@ -285,10 +291,10 @@ disable(entryId) / enable(entryId)
 | patch 写入 | 追加/摘除/原位刷新 managed block;陷阱用例(空文档 `[]`/@ 引号/注释-only);幂等;**恶意包名拒(含 `'`/`:` 等注入样本)**;slugify 碰撞 | **真实临时文件 + 真实解析**,不直调内部函数 |
 | manifest | bundles 增删 + in-box 保护 + 原子写;与官方 CLI reconcile 输出等价性对拍(见 ADR-0005) | 真实临时 profile 目录 |
 | quality | 好包过/坏包拒(缺入口/裸导入/缺 client bundle) | 用演练夹具(自备)与构造坏包夹具 |
-| health | 观察窗口 active/failed/超时三分支;**同块全行对账**(目标 active 但邻行 failed);回滚路径 A/B(hash 对账 + 按块摘除) | 注入假 loader 树 |
+| health | 观察窗口三分:反映成功(active/gone)/反映失败(failed、卡 loading)/未反映(从未挂载、仍 active);**同块全行对账**(目标 active 但邻行 failed);回滚路径 A/B(hash 对账 + 按块摘除) | 注入假 loader 树(挂载/未挂载/失败三分支) |
 | startup-reconcile | 孤儿 insert 块自动摘除;未完结操作标记 interrupted;孤儿依赖告警 | 构造残留夹具 + 真实临时 profile |
 | queue | 串行性、CONFLICT 去重锁定、operationId | 单元 |
-| mode | 引擎 restart + 非 bundle install → `mode:'restart'` + `restartRequired`(两轴分离) | 注入假 hmr 缺失环境 |
+| mode | 经验判定:行挂载 active → `mode:'hot'`;行从未挂载 → `mode:'restart'` + `restartRequired`;挂载 failed/卡 loading → 回滚(两轴分离) | 注入假 loader 树(挂载/未挂载/失败三分支) |
 | e2e | install(非 bundle)→ 实机 3080 验证 ping 路由/回滚 | 演练 profile(web)或临时 profile,验证后清理 |
 | 契约一致性 | `src/contract/types.ts` 与 `docs/01-contract.md` §3 人工对照(review 项) | — |
 

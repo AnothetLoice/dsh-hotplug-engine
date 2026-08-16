@@ -12,7 +12,7 @@
 | `02-design.md` | 详细设计 | 模块布局、写入层规范、安装/回滚流程、质量门、观察窗口、审计、并发、构建、测试、M1-M4 实施顺序 |
 | `03-optimization-directions.md` | **优化方向(非契约/非计划)** | 引擎基础 A–D(pnpm 定位/Windows 可执行性/bundle 热加载编排/错误诊断)+ 看板 UI E–H(搜索/排序/状态色彩/高危停用警告);验收标准与计划制定指引;实施计划见 `plans/06-M6-optimization.md`(v0.1.4) |
 | `04-dynamic-assembly-eval.md` | 评估文档(v2 候选) | 动态服务装配评估:纯客户端 bundle 免重启可行性,结论"不升 v2"(v0.1.4 方向 C) |
-| `05-acceptance-v0.1.4.md` | **实机验收交接(v0.1.4)** | 0–5 逐项验收结论、问题清单、0.1.3→0.1.4 回归对照、证据路径;§8 复测记录 + 开发侧第二轮修复:P0-1/P0-2/P1-1 已闭环,P1-2 根治(回滚后删 sidecar),P2-2 待 v0.1.5 决策(见 02-design §9.3) |
+| `05-acceptance-v0.1.4.md` | **实机验收交接(v0.1.4)** | 0–5 逐项验收结论、问题清单、0.1.3→0.1.4 回归对照、证据路径;§8 复测记录 + 开发侧第二轮修复:P0-1/P0-2/P1-1 已闭环,P1-2 根治(回滚后删 sidecar),P2-2 已定案(经验判定,见 02-design §9.3) |
 | `adr/ADR-0001-package-shape.md` | 决策记录 | 包形态与挂载(bundle 双面) |
 | `adr/ADR-0002-service-identity.md` | 决策记录 | 服务身份与契约版本化(ctx.hotplugEngine, v1 只增不改) |
 | `adr/ADR-0003-operation-model.md` | 决策记录 | 操作模型(串行队列 + 观察窗口自动回滚 + 按块回滚 + 启动对账) |
@@ -31,7 +31,7 @@
 | D4 | 写入层 | owner managed block(绝不整文件重写)+ 行级解析 + 白名单 + 原子写 + **禁 !!js** | 0004 |
 | D5 | 安装执行 | **pnpm 直装不经 dsh CLI**;装前质量门(入口/import 对账/客户端 bundle);in-box 保护;卸载联动清理;按包形态分派 hot/restart | 0005 |
 | D6 | 对外接口 | REST `/api/dsh-hotplug/*`(同源,v1 无 token);工具 `hotplug_*`;SSE 事件 | 0006 |
-| D7 | 审计/降级/范围 | 审计 JSONL;hmr 缺失 → restart 模式(契约不变);自身宿主 profile 只读保护;Non-Goals 锁定(无市场功能) | 0007 |
+| D7 | 审计/降级/范围 | 审计 JSONL;配置热应用不可用 → restart 模式(契约不变,v0.1.5 改为经验判定);自身宿主 profile 只读保护;Non-Goals 锁定(无市场功能) | 0007 |
 
 ## 3. 阅读顺序
 
@@ -45,7 +45,7 @@
 | 架构 | **有条件通过**(4 major + 若干 minor) | 已修复:模式双轴分离(契约 §9/设计 §9)、按块回滚 + 并发 hash 对账(设计 §5.2/ADR-0003)、启动对账(设计 §5.4/ADR-0003)、包名 npm 规范白名单(设计 §2.2/ADR-0004)、profileDir 定位与自身探测(设计 §3.6/ADR-0007)、Windows spawn 策略(设计 §3.6)、bundles 等价性举证(ADR-0005)、slugify 碰撞(设计 §3.3)、队列去重锁定 CONFLICT(设计 §8)、GATE detail 转义/审计滞后指示/pnpm 探测等 minor |
 | 一致性 | **基本一致需修正**(3 major + 8 minor,无 blocker) | 已修复:冻结里程碑三处统一(M1–M4 全量 + 双 review)、02-design §9 stale 分支删除、上位文档 7 处同步(来源枚举/status(entryId)/pnpm 直装/文件备份/同源 POST/工具名/ADR 真实文件名) |
 
-**遗留待办(全部关闭/明确降级,2026-08-14 M4 T4.6)**:① 实机核对 `ctx.get('hmr')` 服务注册名 → ✅ 已核对(cordis-plugin-hmr 以 `"hmr"` 注册,服务构造探测精确);② pkgMeta 负缓存对 install 的影响 → ✅ 已闭环(install 结果消息携带"曾扫描为非客户端包需重启"提示);③ 观察窗口命中率校准 8s → ✅ 定案保留 8s(数据驱动校准留 v2,`observationStats()` 可观测);④ REST 写端点 token/审批钩子 → ✅ 明确登记 v2 候选(ADR-0006 §后果,不阻塞 v1 冻结)。
+**遗留待办(全部关闭/明确降级,2026-08-14 M4 T4.6)**:① 实机核对 `ctx.get('hmr')` 服务注册名 → ✅ 已核对(cordis-plugin-hmr 以 `"hmr"` 注册,服务构造探测精确);**v0.1.5 修订**:该探测仅精确于「hmr 插件是否注册」,但与「配置热应用/重挂」是两条独立机制、在实测 web profile 产生假阴性(验收 P2-2)→ 已改为经验判定(见 ADR-0007 修订、02-design §9.3);② pkgMeta 负缓存对 install 的影响 → ✅ 已闭环(install 结果消息携带"曾扫描为非客户端包需重启"提示);③ 观察窗口命中率校准 8s → ✅ 定案保留 8s(数据驱动校准留 v2,`observationStats()` 可观测);④ REST 写端点 token/审批钩子 → ✅ 明确登记 v2 候选(ADR-0006 §后果,不阻塞 v1 冻结)。
 
 ## 5. 变更流程
 

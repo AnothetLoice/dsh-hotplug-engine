@@ -222,15 +222,16 @@ onEvent(listener: (e: EngineEvent) => void): () => void
 > 修复说明(2026-08-14 双 review):`MutationResult.mode` 只表示**本次操作的生效方式**;引擎运行模式是引擎级状态,由 `EngineSnapshot.mode` 暴露——**两轴不混用**。
 
 ### 9.1 引擎运行模式(`EngineSnapshot.mode`,引擎级)
-- 服务初始化时探测 `ctx.get('hmr')`:存在 → `'hot'`(配置热应用可用);缺失 → `'restart'`(引擎仍按契约执行,任何变更只落盘、需重启生效);
+- `'hot'` = 配置热应用可用(写 patch 行后 loader 实时重挂);`'restart'` = 变更只落盘、需重启生效(引擎仍按契约执行);
 - 引擎运行模式是引擎级状态,由 `EngineSnapshot.mode` 暴露;MUST NOT 写入 `MutationResult.mode`;
-- ⚠️ 实现前必须实机核对:CLI 程序化重挂的 hmr 插件是否以 `hmr` 名注册服务(audit §1.2),避免探测假阴性。
+- **判定方式(经验判定,v0.1.5 修订)**:不再静态探测 `ctx.get('hmr')`(v0.1.4 验收 P2-2 证实其假阴性——它测的是模块级 HMR 插件,与「配置热应用/重挂」是两条独立机制)。改为懒更新:服务初始 `'restart'`,首次写操作观察窗口确认目标行被 loader 挂载后置 `'hot'` 并保持(见 ADR-0007 修订)。
 
 ### 9.2 单次操作生效方式(`MutationResult.mode`,操作级)
-- 只表示**本次变更**如何生效,由包形态与引擎运行模式共同决定:
+- 只表示**本次变更**如何生效,由包形态与**观察结果**共同决定(经验判定,v0.1.5 修订):
   - 目标包声明 `dsh.bundle` → 写 `dsh.profile.bundles` → `mode:'restart'` + `restartRequired:true`(任何引擎模式下);
-  - 目标包不声明 `dsh.bundle` → pnpm 装依赖 + managed insert 行 → 引擎 `'hot'` 时 `mode:'hot'`;引擎 `'restart'` 时**仍写 insert 行**但 `mode:'restart'` + `restartRequired:true`(重启后由 patch 层加载生效——与机制一致:HMR 只省重启,不改变 boot 消费 insert 行的事实);
-- 两种路径都 MUST 过质量门、in-box bundles 保护、卸载联动清理;
+  - 目标包不声明 `dsh.bundle` → pnpm 装依赖 + managed insert 行 → 观察窗口内目标行被 loader 挂载且 `active` → `mode:'hot'`;行**从未挂载** → **仍写 insert 行**但 `mode:'restart'` + `restartRequired:true`(重启后由 patch 层加载生效——与机制一致:HMR 只省重启,不改变 boot 消费 insert 行的事实);
+  - enable/disable(patch 行写)→ 行挂载 `active`(enable)/ 卸载 `gone`(disable)→ `mode:'hot'`;行未反映(enable 从未挂载 / disable 仍 active)→ `mode:'restart'` + `restartRequired:true`(保留写入、下次启动生效);
+- 两种路径都 MUST 过质量门、in-box bundles 保护、卸载联动清理;「未反映」结果 MUST 附警示(未在 loader 生效,可能 restart 环境或 loader 拒绝);
 - 客户端新插件:任何模式下,`MutationResult` MUST 携带「新客户端 bundle 需刷新页面」提示。
 
 ## 10. 版本与兼容

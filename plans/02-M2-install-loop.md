@@ -44,7 +44,7 @@
 
 ## 4.1 实现进度(2026-08-14)
 
-- **T2.0 前置核对完成**:① `cordis-plugin-hmr` 服务名确为 `"hmr"`(`super(ctx, "hmr")` 源码核对)——`ctx.get('hmr')` 探测精确,假阴性风险排除;② pkgMeta 负判定缓存事实确认(audit §1.1)——install 结果已带"需重启或换新包名"提示;③ 观察窗口命中率统计已实现(`observationStats()`);
+- **T2.0 前置核对完成**:① `cordis-plugin-hmr` 服务名确为 `"hmr"`(`super(ctx, "hmr")` 源码核对)——`ctx.get('hmr')` 探测精确,假阴性风险排除;**(v0.1.5 修订:此结论被 P2-2 反证——探测虽精确于「hmr 插件是否注册」,但与「配置热应用/重挂」是两条独立机制、仍产生假阴性,已改经验判定,见 ADR-0007 修订);**② pkgMeta 负判定缓存事实确认(audit §1.1)——install 结果已带"需重启或换新包名"提示;③ 观察窗口命中率统计已实现(`observationStats()`);
 - **T2.1-T2.5 实现完成**:quality.ts(入口/import 对账/客户端 bundle,LOADER_PROVIDED 锁 0.1.0-rc.6)、installer.ts(pnpm 探测/spawn/包形态)、service.install/uninstall(dryRun 同路径、按包形态分派 hot/restart、pkgMeta 提示)、启动对账(孤儿块摘除/未完结 sidecar 审计/孤儿依赖告警)、观察统计;
 - **Windows spawn 关键结论(实测)**:Node 直接 spawn .cmd → EINVAL;裸命令名 → ENOENT;`cmd /d /s /c ""<cmd>" <args>""` + `windowsVerbatimArguments:true` 可行——**已用真实 pnpm 做 e2e 验证**(临时 profile 安装 hotplug-drill 成功,`scripts/real-pnpm-e2e.cjs` 保留为手动验证工具);
 - **测试**:新增 quality 8 + installer 7 + install 15 用例(含 fake pnpm 集成、hot/restart 双模式、bundle 安装、观察失败自动回滚无残留、pnpm 失败、质量门转义、启动对账),全量 **98/98 通过**;typecheck/build 零错误;
