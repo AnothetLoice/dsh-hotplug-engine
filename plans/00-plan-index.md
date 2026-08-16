@@ -16,6 +16,7 @@
 | **M4** | 加固与冻结 | audit 完善 / 多 profile / 降级验证 / 崩溃对账 / **契约 v1 冻结** | M3 | 全量契约 hot/restart 两模式验证;双 subagent review 通过;发布准备 |
 | **M5** | 安全与健壮性整改 | security-crash-review.md 整改(2 高/3 中/5 低):H2 handle 校验、M1 别名拒绝、M2 输出清洗、M3 readPatch 防御、L1 调优、L2 crypto tmp、L5 响应兜底、H1 可选 token 门禁 | M4 冻结后 | 见 plans/05-M5-security-hardening.md 验收条件(A 类全修+单测全绿、H1 决策落地、文档回填) |
 | **M6** | 优化方向(A–H,v0.1.4) | docs/03-optimization-directions.md 的 A–H(pnpm 定位/Windows 可执行性/bundle 热加载编排/错误诊断/看板搜索/排序/状态色彩/高危停用警告) | M5 后(v1 冻结 + 加固) | 见 plans/06-M6-optimization.md 验收条件(typecheck 零错误、测试全绿、演练实机) |
+| **M7** | P2-2 修复(经验判定模式检测,v0.1.5) | health.ts 观察原语三分粒度 + service.ts 经验判定(去 `ctx.get('hmr')` 静态探测 + mode 懒更新 + 未反映保留+警示)+ `AuditRecord.note?` | M6 后(v0.1.4 验收 P2-2) | 见 plans/07-M7-v015-empirical-mode.md 验收条件(三分/懒更新/未反映警示/测试全绿/演练实机) |
 
 ## 2. 阶段间依赖与顺序
 
@@ -74,4 +75,4 @@ M1(启停回滚) ─→ M2(安装) ─→ M3(对外) ─→ M4(加固+冻结)
 
 ---
 
-*对应详细计划:`plans/01-M1-min-closed-loop.md`、`plans/02-M2-install-loop.md`、`plans/03-M3-external-surface.md`、`plans/04-M4-hardening-freeze.md`、`plans/05-M5-security-hardening.md`、`plans/06-M6-optimization.md`。*
+*对应详细计划:`plans/01-M1-min-closed-loop.md`、`plans/02-M2-install-loop.md`、`plans/03-M3-external-surface.md`、`plans/04-M4-hardening-freeze.md`、`plans/05-M5-security-hardening.md`、`plans/06-M6-optimization.md`、`plans/07-M7-v015-empirical-mode.md`。*
