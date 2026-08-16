@@ -105,8 +105,9 @@ install(spec)
     ├─ 5. 质量门复检(装后):目标包 node_modules 实体
     ├─ 6. 写 managed insert 行(rowId = slugify(pkg),见 §3.3)
     ├─ 7. 观察窗口(health.ts):轮询 loader 树目标行 fiber phase
-    │     ├─ active → 成功(mode 按 §9.2,返回 rollbackHandle)
-    │     └─ failed / 超时 → 自动回滚(摘除 insert 行 + pnpm remove)+ 审计 'rolled-back'
+    │     ├─ 反映成功(active)→ 成功(mode 按 §9.2,返回 rollbackHandle)
+    │     ├─ 反映失败(failed / 卡 loading)→ 自动回滚(摘除 insert 行 + pnpm remove)+ 审计 'rolled-back'
+    │     └─ 未反映(全程 undefined,从未挂载)→ 保留写入 + mode:'restart' + restartRequired + 警示(见 §5.3/§9.2)
     └─ 8. 审计 JSONL
 ```
 
@@ -188,10 +189,10 @@ disable(entryId) / enable(entryId)
 
 - 默认 **8s**(配置可调,`config.observationWindowMs`),轮询间隔 500ms;
 - **判定(经验判定,v0.1.5 修订,按「loader 是否反映本次写入」三分)**:
-  - **反映成功**:install/enable 行挂载 `active`、disable 行卸载 `gone` → `mode:'hot'`;
+  - **反映成功**:install/enable 行挂载 `active`、disable 行卸载 `gone` → `mode:'hot'` + `restartRequired:false`;
   - **反映失败**:行进入 `failed`,或 install/enable 行卡 loading/pending 超时 → 自动回滚(坏行,保守);
   - **未反映**:install/enable 行全程 `undefined`(从未挂载)、disable 行仍 `active`(未卸载)→ `mode:'restart'` + `restartRequired:true`,保留写入、下次启动加载、不自动回滚;**结果/审计 MUST 附「未在 loader 生效,可能为 restart 环境或 loader 拒绝,重启后请核对,可用 handle 回滚」警示**;
-- **健康原语粒度要求(v0.1.5)**:`waitForHealth*` 必须区分「从未挂载(全程 `readFiberPhase` 返回 `undefined`)」vs「已挂载但卡 loading/pending」——二者现状都折叠为 `timeout`,落地时须扩展返回(如 `absent`/`stuck`),否则「未反映 vs 反映失败」无法判;
+- **健康原语粒度要求(v0.1.5)**:`waitForHealth*` 必须区分「未反映」vs「反映失败」——install/enable 轴:「从未挂载(全程 `readFiberPhase` 返回 `undefined`)」vs「已挂载但卡 loading/pending」;disable 轴:「仍 active(未卸载)→ 未反映」vs「卡 non-gone/non-active(loading/stuck)→ 反映失败回滚(保守)」。二者现状都折叠为 `timeout`,落地时须扩展返回(如 `absent`/`stuck`),否则三分无法判;
 - **对账范围**(2026-08-14 review):窗口内同时核对本次写入的 managed block **全行**——目标行 active 但同块其他行 failed / 级联扰动 → 视为失败回滚(坏安装可能不标 failed 目标行却扰动他行);
 - 回滚 = 摘除本次写入(insert 块/disable 块/bundles 追加)+ 恢复备份 → 审计 `rolled-back` + `HOTPLUG.*` 错误码;
 - **命中率校准**:M2 起记录窗口命中/未反映/回滚统计,校准 8s 默认值(重客户端插件激活可能需更长)。
@@ -256,6 +257,7 @@ disable(entryId) / enable(entryId)
 ### 9.2 单次操作生效方式(`MutationResult.mode`)
 - bundle 包 → 写 bundles + `mode:'restart'` + `restartRequired`;
 - 非 bundle 包 → pnpm 装依赖 + managed insert 行:观察窗口内目标行被 loader 挂载且 `active` → `mode:'hot'`;行**从未挂载** → **仍写 insert 行** + `mode:'restart'` + `restartRequired`(重启后由 patch 层加载生效——HMR 只省重启,不改变 boot 消费 insert 行的事实,契约不变);
+- enable/disable(patch 行写)→ 行挂载 `active`(enable)/ 卸载 `gone`(disable)→ `mode:'hot'`;行未反映(enable 从未挂载 / disable 仍 active)→ `mode:'restart'` + `restartRequired`(保留写入、下次启动生效;详见 §5.3/§9.3);
 - 客户端新插件:任何模式下,`MutationResult` MUST 携带提示「新客户端 bundle 需刷新页面」(机制限制:SSE 不推 graph 帧,见 audit §1.3)。
 
 ### 9.3 已知问题:P2-2「mode=restart 与配置热应用矛盾」(v0.1.5 已定案)

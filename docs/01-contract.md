@@ -231,7 +231,7 @@ onEvent(listener: (e: EngineEvent) => void): () => void
   - 目标包声明 `dsh.bundle` → 写 `dsh.profile.bundles` → `mode:'restart'` + `restartRequired:true`(任何引擎模式下);
   - 目标包不声明 `dsh.bundle` → pnpm 装依赖 + managed insert 行 → 观察窗口内目标行被 loader 挂载且 `active` → `mode:'hot'`;行**从未挂载** → **仍写 insert 行**但 `mode:'restart'` + `restartRequired:true`(重启后由 patch 层加载生效——与机制一致:HMR 只省重启,不改变 boot 消费 insert 行的事实);
   - enable/disable(patch 行写)→ 行挂载 `active`(enable)/ 卸载 `gone`(disable)→ `mode:'hot'`;行未反映(enable 从未挂载 / disable 仍 active)→ `mode:'restart'` + `restartRequired:true`(保留写入、下次启动生效);
-- 两种路径都 MUST 过质量门、in-box bundles 保护、卸载联动清理;「未反映」结果 MUST 附警示(未在 loader 生效,可能 restart 环境或 loader 拒绝);
+- 两种路径都 MUST 过质量门、in-box bundles 保护、卸载联动清理;「未反映」结果 MUST 附警示(未在 loader 生效,可能 restart 环境或 loader 拒绝,重启后核对);
 - 客户端新插件:任何模式下,`MutationResult` MUST 携带「新客户端 bundle 需刷新页面」提示。
 
 ## 10. 版本与兼容

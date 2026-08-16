@@ -27,7 +27,7 @@
 |---|---|---|---|
 | D1 | 包形态 | **bundle 双面插件**,自身行 id `hotplug-engine`;首装需重启一次,此后全部热挂 | 0001 |
 | D2 | 服务身份 | `ctx.hotplugEngine`;契约 v1 **只增不改**;`src/contract/types.ts` 由契约文档派生 | 0002 |
-| D3 | 操作模型 | 全局串行队列 + operationId;**观察窗口 8s 自动回滚**;回滚=备份恢复+HMR 重放;幂等 | 0003 |
+| D3 | 操作模型 | 全局串行队列 + operationId;**观察窗口 8s 经验判定**(反映成功 hot/反映失败回滚/未反映 restart+警示);回滚=备份恢复+HMR 重放;幂等 | 0003 |
 | D4 | 写入层 | owner managed block(绝不整文件重写)+ 行级解析 + 白名单 + 原子写 + **禁 !!js** | 0004 |
 | D5 | 安装执行 | **pnpm 直装不经 dsh CLI**;装前质量门(入口/import 对账/客户端 bundle);in-box 保护;卸载联动清理;按包形态分派 hot/restart | 0005 |
 | D6 | 对外接口 | REST `/api/dsh-hotplug/*`(同源,v1 无 token);工具 `hotplug_*`;SSE 事件 | 0006 |
